@@ -14,14 +14,15 @@
 -include("erlmark.hrl").
 
 -export([to_html/1, to_html/2]).
--export_type([refs/0, option/0]).
+-export_type([refs/0, option/0, extension/0]).
 
 -type refs() :: #{binary() => {binary(), binary() | none}}.
 
+-type extension() :: autolink | tagfilter | alerts.
 -type option() ::
     {spawn_above, non_neg_integer() | infinity}
     | {parallel, false | auto | pos_integer()}
-    | {extensions, [autolink | tagfilter]}
+    | {extensions, [extension()]}
     | {breaks, boolean()}
     | {safe, boolean()}
     | {front_matter, boolean()}
@@ -39,8 +40,9 @@
 %% <dt>`{extensions, [autolink | tagfilter]}'</dt>
 %% <dd>Opt-in GFM extensions. `autolink' turns bare `www.', `http(s)://' and `ftp://'
 %% URLs and e-mail addresses into links. `tagfilter' escapes `&lt;script&gt;',
-%% `&lt;style&gt;' and similar tags. Conversion with extensions is always
-%% sequential. Default: none.</dd>
+%% `&lt;style&gt;' and similar tags. `alerts' renders block quotes that start with
+%% `[!NOTE]', `[!TIP]', `[!IMPORTANT]', `[!WARNING]' or `[!CAUTION]' as GitHub-style
+%% alerts. Conversion with extensions is always sequential. Default: none.</dd>
 %% <dt>`{front_matter, boolean()}'</dt>
 %% <dd>Skip a leading front matter block: a first line of `---' or `+++', then any lines,
 %% closed by a line holding the same delimiter (no other characters). The block is not
@@ -277,8 +279,13 @@ convert_ext(Bin, Exts) ->
     run_in_worker(fun() -> convert_exts(Bin, Exts) end, Bin).
 
 convert_exts(Bin, Exts) ->
-    {Blocks0, Refs} = erlmark_block:parse(Bin),
+    {Blocks00, Refs} = erlmark_block:parse(Bin),
     erase(erlmark_unclosed),
+    Blocks0 =
+        case lists:member(alerts, Exts) of
+            true -> erlmark_gfm:alerts(Blocks00);
+            false -> Blocks00
+        end,
     Auto = lists:member(autolink, Exts),
     Blocks =
         case Auto of
@@ -305,6 +312,8 @@ map_src1(Fun, {heading, L, Src}) ->
     {heading, L, Fun(Src)};
 map_src1(Fun, {blockquote, Bs}) ->
     {blockquote, map_src(Fun, Bs)};
+map_src1(Fun, {alert, Type, Title, Bs}) ->
+    {alert, Type, Title, map_src(Fun, Bs)};
 map_src1(Fun, {list, T, Tight, Items}) ->
     {list, T, Tight, [{item, Task, map_src(Fun, Bs)} || {item, Task, Bs} <- Items]};
 map_src1(Fun, {table, Aligns, Head, Rows}) ->
@@ -370,6 +379,22 @@ block({blockquote, Blocks}, Refs) ->
         [] -> <<"<blockquote>\n</blockquote>\n">>;
         _ -> [<<"<blockquote>\n">>, blocks(Blocks, Refs), <<"</blockquote>\n">>]
     end;
+block({alert, Type, Title, Blocks}, Refs) ->
+    Name = atom_to_binary(Type),
+    Heading =
+        case Title of
+            <<>> -> alert_title(Type);
+            _ -> erlmark_util:esc(Title)
+        end,
+    [
+        <<"<div class=\"markdown-alert markdown-alert-">>,
+        Name,
+        <<"\">\n<p class=\"markdown-alert-title\">">>,
+        Heading,
+        <<"</p>\n">>,
+        blocks(Blocks, Refs),
+        <<"</div>\n">>
+    ];
 block(thematic, _Refs) ->
     <<"<hr />\n">>;
 block({html, Raw}, _Refs) ->
@@ -420,6 +445,12 @@ cell_open(<<"th">>, center) -> <<"<th align=\"center\">">>.
 
 cell_close(<<"td">>) -> <<"</td>\n">>;
 cell_close(<<"th">>) -> <<"</th>\n">>.
+
+alert_title(note) -> <<"Note">>;
+alert_title(tip) -> <<"Tip">>;
+alert_title(important) -> <<"Important">>;
+alert_title(warning) -> <<"Warning">>;
+alert_title(caution) -> <<"Caution">>.
 
 heading_tags(1) -> {<<"<h1>">>, <<"</h1>\n">>};
 heading_tags(2) -> {<<"<h2>">>, <<"</h2>\n">>};

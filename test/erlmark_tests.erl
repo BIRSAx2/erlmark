@@ -1048,3 +1048,81 @@ front_matter_test_() ->
             html(<<"---\ntitle: x\n---\n# Hello">>)
         )
     ].
+
+alerts_test_() ->
+    A = fun(Md) -> erlmark:to_html(Md, [{extensions, [alerts]}]) end,
+    Open = fun(Type) -> <<"<div class=\"markdown-alert markdown-alert-", Type/binary, "\">\n">> end,
+    [
+        ?_assertEqual(
+            <<
+                (Open(<<"note">>))/binary,
+                "<p class=\"markdown-alert-title\">Note</p>\n<p>text</p>\n</div>\n"
+            >>,
+            A(<<"> [!NOTE]\n> text">>)
+        ),
+        %% every type, in any case
+        ?_assertMatch(
+            {_, _},
+            binary:match(
+                A(<<"> [!tip]\n> x">>),
+                <<"markdown-alert-tip\">\n<p class=\"markdown-alert-title\">Tip">>
+            )
+        ),
+        ?_assertMatch({_, _}, binary:match(A(<<"> [!Important]\n> x">>), <<">Important</p>">>)),
+        ?_assertMatch({_, _}, binary:match(A(<<"> [!WARNING]\n> x">>), <<">Warning</p>">>)),
+        ?_assertMatch({_, _}, binary:match(A(<<"> [!CAUTION]\n> x">>), <<">Caution</p>">>)),
+        %% empty body, several paragraphs, rest of the first paragraph
+        ?_assertEqual(
+            <<(Open(<<"note">>))/binary, "<p class=\"markdown-alert-title\">Note</p>\n</div>\n">>,
+            A(<<"> [!NOTE]">>)
+        ),
+        ?_assertEqual(
+            <<
+                (Open(<<"note">>))/binary,
+                "<p class=\"markdown-alert-title\">Note</p>\n<p>a\nb</p>\n<p>c</p>\n</div>\n"
+            >>,
+            A(<<"> [!NOTE]\n> a\n> b\n>\n> c">>)
+        ),
+        %% text after the marker on its line is a custom title
+        ?_assertEqual(
+            <<
+                (Open(<<"tip">>))/binary,
+                "<p class=\"markdown-alert-title\">Custom &amp; title</p>\n<p>x</p>\n</div>\n"
+            >>,
+            A(<<"> [!TIP] Custom & title\n> x">>)
+        ),
+        %% the body can start with any block
+        ?_assertMatch(
+            {_, _},
+            binary:match(A(<<"> [!NOTE]\n> | a |\n> |---|\n> | 1 |">>), <<"<table>">>)
+        ),
+        ?_assertMatch({_, _}, binary:match(A(<<"> [!NOTE]\n> - one\n> - two">>), <<"<ul>">>)),
+        %% nested in a list and in another quote
+        ?_assertMatch(
+            {_, _},
+            binary:match(A(<<"- > [!TIP]\n  > x">>), <<"<li>\n<div class=\"markdown-alert">>)
+        ),
+        ?_assertMatch(
+            {_, _},
+            binary:match(
+                A(<<"> > [!NOTE]\n> > x">>), <<"<blockquote>\n<div class=\"markdown-alert">>
+            )
+        ),
+        %% not alerts
+        ?_assertEqual(erlmark:to_html(<<"> [!UNKNOWN]\n> x">>), A(<<"> [!UNKNOWN]\n> x">>)),
+        ?_assertEqual(erlmark:to_html(<<"> text\n> [!NOTE]">>), A(<<"> text\n> [!NOTE]">>)),
+        ?_assertEqual(erlmark:to_html(<<"> [!NOTE ]\n> x">>), A(<<"> [!NOTE ]\n> x">>)),
+        ?_assertEqual(erlmark:to_html(<<"[!NOTE]\ntext">>), A(<<"[!NOTE]\ntext">>)),
+        %% off unless asked for
+        ?_assertEqual(erlmark:to_html(<<"> [!NOTE]\n> x">>), html(<<"> [!NOTE]\n> x">>)),
+        %% works together with the other extensions
+        ?_assertMatch(
+            {_, _},
+            binary:match(
+                erlmark:to_html(<<"> [!NOTE]\n> see www.example.com">>, [
+                    {extensions, [alerts, autolink]}
+                ]),
+                <<"<a href=\"http://www.example.com\">">>
+            )
+        )
+    ].

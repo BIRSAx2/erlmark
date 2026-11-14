@@ -12,11 +12,78 @@
 %% original text is restored.
 -module(erlmark_gfm).
 
--export([pre/1, post/1, tagfilter/1]).
+-export([pre/1, post/1, tagfilter/1, alerts/1]).
 
 -define(IS_ALNUM(C),
     ((C >= $a andalso C =< $z) orelse (C >= $A andalso C =< $Z) orelse (C >= $0 andalso C =< $9))
 ).
+
+%%--------------------------------------------------------------------
+%% Alerts
+%%--------------------------------------------------------------------
+
+%% Turn block quotes that start with `[!NOTE]' (or TIP, IMPORTANT, WARNING, CAUTION, in
+%% any case) into `{alert, Type, Title, Blocks}' nodes. Text after the marker on its line
+%% is a custom title; the rest of the first paragraph and the other blocks are the body.
+-spec alerts([term()]) -> [term()].
+alerts(Blocks) -> [alert(B) || B <- Blocks].
+
+alert({blockquote, [{paragraph, <<"[!", Rest/binary>> = Src} | More] = Inner}) ->
+    case alert_type(Rest) of
+        {ok, Type, AfterMarker} ->
+            {Title, Body} =
+                case binary:split(AfterMarker, <<"\n">>) of
+                    [Line, After] -> {erlmark_util:trim(Line), After};
+                    [Line] -> {erlmark_util:trim(Line), <<>>}
+                end,
+            First = body_blocks(Body),
+            {alert, Type, Title, alerts(First ++ More)};
+        none ->
+            _ = Src,
+            {blockquote, alerts(Inner)}
+    end;
+alert({blockquote, Blocks}) ->
+    {blockquote, alerts(Blocks)};
+alert({list, Type, Tight, Items}) ->
+    {list, Type, Tight, [{item, Task, alerts(Bs)} || {item, Task, Bs} <- Items]};
+alert(Other) ->
+    Other.
+
+%% The text after the marker line may start any block (a table, a list), so it is parsed
+%% again. Link reference definitions in it would not be seen by the rest of the document,
+%% so such a body stays a paragraph.
+body_blocks(Body) ->
+    case erlmark_util:trim(Body) of
+        <<>> ->
+            [];
+        _ ->
+            {Blocks, Refs} = erlmark_block:parse(Body),
+            erase(erlmark_unclosed),
+            case map_size(Refs) of
+                0 -> Blocks;
+                _ -> [{paragraph, Body}]
+            end
+    end.
+
+alert_type(Rest) ->
+    case binary:split(Rest, <<"]">>) of
+        [Name, After] when byte_size(Name) =< 9 ->
+            case lists:keyfind(string:lowercase(Name), 1, alert_types()) of
+                {_, Type} -> {ok, Type, After};
+                false -> none
+            end;
+        _ ->
+            none
+    end.
+
+alert_types() ->
+    [
+        {<<"note">>, note},
+        {<<"tip">>, tip},
+        {<<"important">>, important},
+        {<<"warning">>, warning},
+        {<<"caution">>, caution}
+    ].
 
 %%--------------------------------------------------------------------
 %% Tagfilter
