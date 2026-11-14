@@ -3,3 +3,4 @@ erl_crash.dump
 *.beam
 .DS_Store
 rebar3.crashdump
+doc/
