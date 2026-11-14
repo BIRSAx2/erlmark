@@ -1,6 +1,6 @@
 {application, erlmark,
  [{description, "Fast, pure Erlang CommonMark Markdown to HTML converter (plus GFM tables, strikethrough, task lists)"},
-  {vsn, "0.1.0"},
+  {vsn, "0.1.1"},
   {registered, []},
   {applications, [kernel, stdlib]},
   {env, []},
