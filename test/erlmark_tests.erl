@@ -771,3 +771,76 @@ pointy_destination_escape_test() ->
     %% a backslash before a line end is not an escape: the destination cannot span lines
     ?assertEqual(<<"<p>[a](&lt;b<br />\nc&gt;)</p>\n">>, erlmark:to_html(<<"[a](<b\\\nc>)\n">>)),
     ?assertEqual(<<"<p><a href=\"b%3E\">a</a></p>\n">>, erlmark:to_html(<<"[a](<b\\>>)\n">>)).
+
+%% An empty container leaves no paragraph open, so an unmarked line after it is not a
+%% lazy continuation line.
+no_lazy_continuation_after_empty_container_test_() ->
+    [
+        ?_assertEqual(
+            <<"<blockquote>\n<ul>\n<li></li>\n</ul>\n</blockquote>\n<p>&amp;</p>\n">>,
+            html(<<">-\n&">>)
+        ),
+        ?_assertEqual(
+            <<"<ul>\n<li>\n<ul>\n<li></li>\n</ul>\n</li>\n</ul>\n<p>!</p>\n">>, html(<<"- -\n!">>)
+        ),
+        ?_assertEqual(
+            <<"<ul>\n<li>\n<blockquote>\n</blockquote>\n</li>\n</ul>\n<p>c</p>\n">>,
+            html(<<"* >\nc">>)
+        ),
+        ?_assertEqual(
+            <<"<blockquote>\n<blockquote>\n</blockquote>\n</blockquote>\n<p>x</p>\n">>,
+            html(<<"> >\nx">>)
+        ),
+        %% text inside the nested container still continues lazily
+        ?_assertEqual(
+            <<"<blockquote>\n<ul>\n<li>a\nb</li>\n</ul>\n</blockquote>\n">>, html(<<"> - a\nb">>)
+        )
+    ].
+
+%% A definition-only paragraph after a blank line does not make an item loose by itself.
+reference_definition_does_not_loosen_item_test() ->
+    ?assertEqual(
+        <<"<ul>\n<li>a</li>\n</ul>\n">>, html(<<"* a\n\n  [1]: http://x\n">>)
+    ),
+    ?assertEqual(
+        <<"<ul>\n<li>\n<p>a</p>\n</li>\n<li>\n<p>b</p>\n</li>\n</ul>\n">>,
+        html(<<"* a\n\n  [1]: http://x\n* b\n">>)
+    ).
+
+%% Only a paragraph can be continued lazily: an unprefixed line after fenced code or an
+%% HTML block inside a block quote or list item ends the container.
+no_lazy_continuation_after_code_or_html_test_() ->
+    [
+        ?_assertEqual(
+            <<"<blockquote>\n<pre><code>code\n</code></pre>\n</blockquote>\n<p>lazy</p>\n">>,
+            html(<<"> ```\n> code\nlazy">>)
+        ),
+        ?_assertEqual(
+            <<"<ul>\n<li>\n<pre><code>code\n</code></pre>\n</li>\n</ul>\n<p>lazy</p>\n">>,
+            html(<<"- ```\n  code\nlazy">>)
+        ),
+        ?_assertEqual(
+            <<"<blockquote>\n<div>\ntext\n</blockquote>\n<p>lazy</p>\n">>,
+            html(<<"> <div>\n> text\nlazy">>)
+        ),
+        ?_assertEqual(
+            <<"<blockquote>\n<v>\n</blockquote>\n<p>lazy</p>\n">>, html(<<"> <v>\nlazy">>)
+        ),
+        ?_assertEqual(
+            <<"<ul>\n<li>\n<div>\ntext\n</li>\n</ul>\n<p>lazy</p>\n">>,
+            html(<<"- <div>\n  text\nlazy">>)
+        ),
+        %% after the fence is closed the next paragraph line is a normal lazy continuation
+        ?_assertEqual(
+            <<"<blockquote>\n<p>a</p>\n<pre><code>b\n</code></pre>\n</blockquote>\n<p>lazy</p>\n">>,
+            html(<<"> a\n> ```\n> b\n> ```\nlazy">>)
+        )
+    ].
+
+%% A very long run of lazy lines stays linear.
+long_lazy_run_is_linear_test_() ->
+    {timeout, 30, fun() ->
+        Lines = iolist_to_binary(lists:duplicate(100000, "lazy line\n")),
+        {T, _} = timer:tc(fun() -> erlmark:to_html(<<"- a\n", Lines/binary>>) end),
+        ?assert(T < 2000000)
+    end}.

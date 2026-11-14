@@ -60,6 +60,7 @@ split_lines(Bin) ->
     %% only if the document has list items, whether it contains any tab (item_lines/3).
     put(erlmark_src, Bin),
     erase(erlmark_notab),
+    erase(erlmark_lazy),
     case binary:match(Bin, <<"\r">>) of
         nomatch ->
             plain_lines(Bin);
@@ -525,9 +526,9 @@ quote_lines([], Acc, _) ->
 quote_lines([L | Rest] = Lines, Acc, InPara) ->
     case quote_strip(L) of
         {ok, In} ->
-            quote_lines(Rest, [In | Acc], para_state(In, InPara));
+            quote_lines(Rest, [In | Acc], block_state(InPara, In));
         none ->
-            case InPara andalso lazy_line(L) of
+            case InPara =:= true andalso lazy_line(L) of
                 true -> quote_lines(Rest, [lazy_escape(L) | Acc], true);
                 false -> {lists:reverse(Acc), Lines}
             end
@@ -570,17 +571,88 @@ tab_after_marker(R, Col) ->
     {End, Rest} = lead(R, Col),
     <<(binary:copy(<<" ">>, End - Col - 1))/binary, Rest/binary>>.
 
-%% Does the (stripped) inner line leave a paragraph open?
-para_state(<<C, _/binary>>, _) when ?IS_LETTER(C); C >= 128 -> true;
-para_state(<<$>, $\s, R/binary>>, InPara) ->
-    para_state(R, InPara);
-para_state(L, InPara) ->
+%% What the last inner line of a container leaves open: `true` (a paragraph, so the next
+%% unprefixed line may continue it lazily), `false` (nothing that can continue lazily),
+%% `{fence, Char, Len}` (inside fenced code) or `{html, Type}` (inside an HTML block).
+block_state(St, L) when is_tuple(St) -> inside_block(St, L);
+block_state(St, L) -> plain_state(St, L).
+
+%% St is `true` or `false` here.
+plain_state(_, <<C, _/binary>>) when ?IS_LETTER(C); C >= 128 -> true;
+%% `- text`, `* text`, `+ text`: a bullet with text on the same line keeps a paragraph open.
+plain_state(_, <<M, $\s, C, _/binary>>) when
+    (M =:= $- orelse M =:= $* orelse M =:= $+) andalso (?IS_LETTER(C) orelse C >= 128)
+->
+    true;
+plain_state(St, <<$>, $\s, R/binary>>) ->
+    plain_state(St, R);
+plain_state(St, L) ->
     case indent(L) of
-        {_, <<>>} -> false;
-        {_, <<$\t, _/binary>> = T0} -> not erlmark_util:is_blank(T0) andalso InPara;
-        {N, _} when N >= 4 -> InPara;
-        {_, T} -> not (atx(T) =/= none orelse thematic(T) orelse fence_open(T) =/= none)
+        {_, <<>>} ->
+            false;
+        {_, <<$\t, _/binary>> = T0} ->
+            not erlmark_util:is_blank(T0) andalso St =:= true;
+        {N, _} when N >= 4 ->
+            St =:= true;
+        {_, T} ->
+            case fence_open(T) of
+                {Ch, Len, _} ->
+                    {fence, Ch, Len};
+                none ->
+                    case atx(T) =/= none orelse thematic(T) of
+                        true -> false;
+                        false -> start_state(St, T, L)
+                    end
+            end
     end.
+
+%% Inside fenced code or an HTML block: only its end matters.
+inside_block({fence, Ch, Len} = St, L) ->
+    case closing_fence(L, Ch, Len) of
+        true -> false;
+        false -> St
+    end;
+inside_block({html, Type} = St, L) when Type =< 5 ->
+    case html_ends(Type, L) of
+        true -> false;
+        false -> St
+    end;
+inside_block({html, _} = St, L) ->
+    case blank(L) of
+        true -> false;
+        false -> St
+    end.
+
+%% A line that is neither a fence, a heading nor a thematic break.
+start_state(St, <<$<, _/binary>> = T, L) ->
+    case html_start(T) of
+        none ->
+            true;
+        7 when St =:= true ->
+            true;
+        Type when Type =< 5 ->
+            case html_ends(Type, L) of
+                true -> false;
+                false -> {html, Type}
+            end;
+        Type ->
+            {html, Type}
+    end;
+start_state(_, <<$>, R/binary>>, _) ->
+    case R of
+        <<$\s, R2/binary>> -> block_state(false, R2);
+        _ -> block_state(false, R)
+    end;
+start_state(_, <<C, _/binary>> = T, _) when C =:= $-; C =:= $*; C =:= $+; C >= $0, C =< $9 ->
+    case list_marker(T) of
+        {_, MLen, After, _} ->
+            {_, Content} = item_start(0, MLen, After),
+            block_state(false, Content);
+        _ ->
+            true
+    end;
+start_state(_, _, _) ->
+    true.
 
 %% May this un-prefixed line continue the paragraph lazily?
 lazy_line(L) ->
@@ -598,15 +670,6 @@ lazy_escape(L) ->
     case setext(T) of
         none -> L;
         _ -> <<(binary:copy(<<" ">>, N))/binary, $\\, T/binary>>
-    end.
-
-%% Does this line plausibly end in an open paragraph?
-paraish(L) ->
-    case indent(L) of
-        {_, <<>>} -> false;
-        {_, <<$\t, _/binary>> = T0} -> not erlmark_util:is_blank(T0);
-        {N, _} when N >= 4 -> true;
-        {_, T} -> not (atx(T) =/= none orelse thematic(T) orelse fence_open(T) =/= none)
     end.
 
 %%--------------------------------------------------------------------
@@ -1253,10 +1316,14 @@ item_lines([L | Rest] = Lines, W, Acc, Blanks) ->
             item_lines(Rest, W, [strip_cols(L, W) | Acc1], 0);
         {N, T} ->
             case Blanks =:= 0 andalso lazy_item(Acc, N, T, L) of
-                true -> item_lines(Rest, W, [lazy_escape(L) | Acc], 0);
+                true -> item_lines_lazy(Rest, W, [lazy_escape(L) | Acc]);
                 false -> {lists:reverse(Acc), Lines, Blanks > 0}
             end
     end.
+
+item_lines_lazy(Rest, W, Acc) ->
+    put(erlmark_lazy, Acc),
+    item_lines(Rest, W, Acc, 0).
 
 %% The rest of a line after one / two leading tabs, with the part of the tab columns
 %% beyond the item's content column W (<= 4 / <= 8) kept as spaces.
@@ -1280,11 +1347,20 @@ skip_blank_lines([]) ->
 
 %% Lines indented four or more spaces cannot start a block here, so they just
 %% continue an open paragraph; otherwise cheap, usually-decisive tests first.
-lazy_item([Prev | _], N, _T, L) when N >= 4 ->
-    not blank(L) andalso paraish(Prev);
-lazy_item([Prev | _], _N, T, L) ->
-    list_marker(T) =:= none andalso not interrupts(T) andalso not blank(L) andalso
-        paraish(Prev).
+lazy_item(Acc, N, T, L) ->
+    not blank(L) andalso (N >= 4 orelse (list_marker(T) =:= none andalso not interrupts(T))) andalso
+        acc_state(Acc) =:= true.
+
+%% The state (see block_state/2) after the item lines collected so far, which are held newest
+%% first. The result of a lazy continuation is remembered, so a run of lazy lines is not
+%% rescanned from the start each time.
+acc_state(Acc) ->
+    case get(erlmark_lazy) of
+        Acc ->
+            true;
+        _ ->
+            lists:foldl(fun(L, St) -> block_state(St, L) end, false, lists:reverse(Acc))
+    end.
 
 task([{paragraph, <<"[ ] ", R/binary>>} | T]) -> {unchecked, [{paragraph, R} | T]};
 task([{paragraph, <<"[x] ", R/binary>>} | T]) -> {checked, [{paragraph, R} | T]};
