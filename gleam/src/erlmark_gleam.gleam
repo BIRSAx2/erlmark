@@ -66,6 +66,7 @@ type Extension {
   Autolink
   Tagfilter
   Alerts
+  Footnotes
 }
 
 /// The default options: no extensions, sequential conversion, helper process above
@@ -161,6 +162,13 @@ pub fn spawn_above(options: Options, threshold: Threshold) -> Options {
 /// or `[!CAUTION]` as GitHub-style alerts. Conversion with extensions is always sequential.
 pub fn alerts(options: Options) -> Options {
   add_extension(options, Alerts)
+}
+
+/// Add `[^label]` references and `[^label]: text` definitions. Notes are numbered in the
+/// order of first use and listed in a `<section class="footnotes">` at the end. Conversion
+/// with extensions is always sequential.
+pub fn footnotes(options: Options) -> Options {
+  add_extension(options, Footnotes)
 }
 
 fn add_extension(options: Options, extension: Extension) -> Options {

@@ -14,7 +14,7 @@ defmodule Erlmark do
   """
 
   @typedoc "An opt-in GFM extension."
-  @type extension :: :autolink | :tagfilter | :alerts
+  @type extension :: :autolink | :tagfilter | :alerts | :footnotes
 
   @typedoc """
   A conversion option. See `to_html/2`.
@@ -30,7 +30,7 @@ defmodule Erlmark do
           | {:heading_anchors, boolean()}
           | {:code_class_prefix, String.t()}
 
-  @extensions [:autolink, :tagfilter, :alerts]
+  @extensions [:autolink, :tagfilter, :alerts, :footnotes]
 
   @doc """
   Converts Markdown to HTML.
@@ -41,7 +41,9 @@ defmodule Erlmark do
       `http(s)://` and `ftp://` URLs and e-mail addresses into links. `:tagfilter`
       escapes `<script>`, `<style>` and similar tags. `:alerts` renders block quotes starting
       with `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` as GitHub-style
-      alerts. Conversion with extensions is
+      alerts. `:footnotes` adds `[^label]` references and `[^label]: text` definitions,
+      numbered in the order of first use and listed in a `<section class="footnotes">` at
+      the end. Conversion with extensions is
       always sequential. Defaults to `[]`.
 
     * `:parallel` - `:auto` (all online schedulers) or a number of schedulers to

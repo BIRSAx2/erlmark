@@ -69,6 +69,17 @@ defmodule ErlmarkTest do
     assert_raise ArgumentError, fn -> Erlmark.to_html("x", heading_ids: {:prefix, 1}) end
   end
 
+  test "footnotes extension" do
+    html = Erlmark.to_html("Text[^1].\n\n[^1]: The note.", extensions: [:footnotes])
+
+    assert html =~
+             ~s(<sup class="footnote-ref"><a href="#fn-1" id="fnref-1" data-footnote-ref>1</a></sup>)
+
+    assert html =~ ~s(<section class="footnotes" data-footnotes>)
+    assert html =~ "The note."
+    assert Erlmark.to_html("Text[^1].\n\n[^1]: The note.") =~ "[^1]"
+  end
+
   test "rejects invalid options" do
     assert_raise ArgumentError, ~r/unknown option/, fn -> Erlmark.to_html("x", bogus: 1) end
 

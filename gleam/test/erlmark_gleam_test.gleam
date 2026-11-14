@@ -140,3 +140,11 @@ pub fn heading_ids_test() {
   )
   assert erlmark.to_html("# A") == "<h1>A</h1>\n"
 }
+
+pub fn footnotes_test() {
+  let md = "Text[^1].\n\n[^1]: The note."
+  let html = erlmark.to_html_with(md, erlmark.new() |> erlmark.footnotes)
+  assert string.contains(html, "<sup class=\"footnote-ref\">")
+  assert string.contains(html, "<section class=\"footnotes\" data-footnotes>")
+  assert string.contains(erlmark.to_html(md), "[^1]")
+}
