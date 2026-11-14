@@ -65,22 +65,41 @@ jobs:
           elixir-version: "1.19"
           gleam-version: "1.17.0"
           rebar3-version: "3"
+      # Hex may stage a new release until it is approved in the Hex dashboard, so each
+      # step skips a version that is already there, and the wrappers (which depend on
+      # exactly this version) wait up to an hour for the approval.
       - name: Publish erlmark
-        run: rebar3 hex publish --yes
-      # The wrappers depend on exactly this version, so wait until Hex serves it.
+        run: |
+          vsn=${GITHUB_REF_NAME#v}
+          if curl -fsS "https://hex.pm/api/packages/erlmark/releases/$vsn" >/dev/null; then
+            echo "erlmark $vsn is already on Hex"
+          else
+            rebar3 hex publish --yes
+          fi
       - name: Publish erlmark_ex
         working-directory: elixir
         run: |
-          for i in $(seq 1 30); do mix deps.get && ok=1 && break; sleep 10; done
+          vsn=${GITHUB_REF_NAME#v}
+          if curl -fsS "https://hex.pm/api/packages/erlmark_ex/releases/$vsn" >/dev/null; then
+            echo "erlmark_ex $vsn is already on Hex"
+            exit 0
+          fi
+          for i in $(seq 1 360); do mix deps.get && ok=1 && break; sleep 10; done
           test -n "$ok"
           mix hex.publish --yes
       - name: Publish erlmark_gleam
         working-directory: gleam
         run: |
-          for i in $(seq 1 30); do gleam deps download && ok=1 && break; sleep 10; done
+          vsn=${GITHUB_REF_NAME#v}
+          if curl -fsS "https://hex.pm/api/packages/erlmark_gleam/releases/$vsn" >/dev/null; then
+            echo "erlmark_gleam $vsn is already on Hex"
+            exit 0
+          fi
+          for i in $(seq 1 360); do gleam deps download && ok=1 && break; sleep 10; done
           test -n "$ok"
-          gleam publish --yes
+          # Gleam asks for this phrase before publishing a 0.x version; --yes does not cover it.
+          printf 'I am not using semantic versioning\n' | gleam publish --yes
       - name: GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" --generate-notes --verify-tag
+        run: gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || gh release create "${GITHUB_REF_NAME}" --generate-notes --verify-tag
