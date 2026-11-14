@@ -28,6 +28,13 @@ defmodule ErlmarkTest do
     assert Erlmark.to_html("<script>x</script>", extensions: [:tagfilter]) =~ "&lt;script>"
   end
 
+  test "breaks and code_class_prefix" do
+    assert Erlmark.to_html("a\nb", breaks: true) == "<p>a<br />\nb</p>\n"
+    assert Erlmark.to_html("```erl\nx\n```", code_class_prefix: "hl-") =~ ~s(class="hl-erl")
+    assert_raise ArgumentError, fn -> Erlmark.to_html("x", breaks: "yes") end
+    assert_raise ArgumentError, fn -> Erlmark.to_html("x", code_class_prefix: :atom) end
+  end
+
   test "rejects invalid options" do
     assert_raise ArgumentError, ~r/unknown option/, fn -> Erlmark.to_html("x", bogus: 1) end
 

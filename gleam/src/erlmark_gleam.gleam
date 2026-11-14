@@ -19,10 +19,17 @@
 //// Erlang target.
 
 import gleam/list
+import gleam/option.{type Option, None, Some}
 
 /// Conversion options. Start from `new` and adjust with the builder functions.
 pub opaque type Options {
-  Options(threshold: Threshold, parallel: Parallel, extensions: List(Extension))
+  Options(
+    threshold: Threshold,
+    parallel: Parallel,
+    extensions: List(Extension),
+    breaks: Bool,
+    code_class_prefix: Option(String),
+  )
 }
 
 /// How many schedulers to convert a large document on. The output is identical to
@@ -54,7 +61,25 @@ type Extension {
 /// The default options: no extensions, sequential conversion, helper process above
 /// 256 bytes.
 pub fn new() -> Options {
-  Options(threshold: Bytes(256), parallel: Sequential, extensions: [])
+  Options(
+    threshold: Bytes(256),
+    parallel: Sequential,
+    extensions: [],
+    breaks: False,
+    code_class_prefix: None,
+  )
+}
+
+/// Render a line break inside a paragraph as `<br />`, as chat and comment systems
+/// expect. Off by default.
+pub fn breaks(options: Options) -> Options {
+  Options(..options, breaks: True)
+}
+
+/// Set the prefix of the class on fenced code blocks that have an info string. The
+/// default is `"language-"`.
+pub fn code_class_prefix(options: Options, prefix: String) -> Options {
+  Options(..options, code_class_prefix: Some(prefix))
 }
 
 /// Turn bare `www.`, `http(s)://` and `ftp://` URLs and e-mail addresses into links.
@@ -111,7 +136,14 @@ pub fn to_html(markdown: String) -> String
 /// // -> "<p>visit <a href=\"http://www.example.com\">www.example.com</a></p>\n"
 /// ```
 pub fn to_html_with(markdown: String, options: Options) -> String {
-  convert(markdown, options.threshold, options.parallel, options.extensions)
+  convert(
+    markdown,
+    options.threshold,
+    options.parallel,
+    options.extensions,
+    options.breaks,
+    options.code_class_prefix,
+  )
 }
 
 @external(erlang, "erlmark_gleam_ffi", "to_html")
@@ -120,4 +152,6 @@ fn convert(
   threshold: Threshold,
   parallel: Parallel,
   extensions: List(Extension),
+  breaks: Bool,
+  code_class_prefix: Option(String),
 ) -> String

@@ -76,3 +76,17 @@ pub fn invalid_values_are_clamped_test() {
     |> erlmark.spawn_above(erlmark.Bytes(-5))
   assert erlmark.to_html_with(md, options) == erlmark.to_html(md)
 }
+
+pub fn breaks_test() {
+  assert erlmark.to_html("a\nb") == "<p>a\nb</p>\n"
+  assert erlmark.to_html_with("a\nb", erlmark.new() |> erlmark.breaks)
+    == "<p>a<br />\nb</p>\n"
+}
+
+pub fn code_class_prefix_test() {
+  let options = erlmark.new() |> erlmark.code_class_prefix("hl-")
+  assert string.contains(
+    erlmark.to_html_with("```erl\nx\n```", options),
+    "class=\"hl-erl\"",
+  )
+}
