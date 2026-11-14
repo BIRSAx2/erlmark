@@ -4,3 +4,7 @@ erl_crash.dump
 .DS_Store
 rebar3.crashdump
 doc/
+/elixir/deps/
+/gleam/build/
+*.tar
+*.ez

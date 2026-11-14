@@ -23,26 +23,19 @@ and needs nothing beyond Erlang/OTP.
 Erlang (`rebar.config`):
 
 ```erlang
-{deps, [{erlmark, "0.1.0"}]}.
+{deps, [{erlmark, "0.1.1"}]}.
 ```
 
-Elixir (`mix.exs`; Mix builds the rebar3 package for you):
+Elixir and Gleam have their own packages with native-feeling APIs, built on this one:
 
-```elixir
-{:erlmark, "~> 0.1"}
-```
+| Language | Package | Usage |
+|---|---|---|
+| Elixir | [`erlmark_ex`](https://hex.pm/packages/erlmark_ex) | `Erlmark.to_html(md, extensions: [:autolink])` |
+| Gleam | [`erlmark_gleam`](https://hex.pm/packages/erlmark_gleam) | `erlmark.to_html_with(md, erlmark.new() \|> erlmark.autolink)` |
 
-```elixir
-:erlmark.to_html("# Hello *world*")
-:erlmark.to_html(markdown, parallel: :auto, extensions: [:autolink])
-```
-
-Gleam (`gleam add erlmark`; `rebar3` must be installed):
-
-```gleam
-@external(erlang, "erlmark", "to_html")
-pub fn to_html(markdown: String) -> String
-```
+Their sources are in the [`elixir/`](elixir) and [`gleam/`](gleam) directories. You can
+also call this package directly: from Elixir as `:erlmark.to_html("# Hi")`, and from Gleam
+with `@external(erlang, "erlmark", "to_html")`.
 
 ## API
 
