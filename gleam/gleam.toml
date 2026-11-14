@@ -1,0 +1,14 @@
+name = "erlmark_gleam"
+version = "0.1.0"
+description = "Gleam interface to erlmark, a fast pure Erlang CommonMark and GFM Markdown converter."
+licences = ["Apache-2.0"]
+repository = { type = "github", user = "BIRSAx2", repo = "erlmark", path = "gleam" }
+links = [{ title = "erlmark on Hex", href = "https://hex.pm/packages/erlmark" }]
+gleam = ">= 1.11.0"
+
+[dependencies]
+gleam_stdlib = ">= 0.44.0 and < 2.0.0"
+erlmark = ">= 0.1.1 and < 1.0.0"
+
+[dev_dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"
