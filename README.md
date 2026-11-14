@@ -23,7 +23,7 @@ and needs nothing beyond Erlang/OTP.
 Erlang (`rebar.config`):
 
 ```erlang
-{deps, [{erlmark, "0.1.1"}]}.
+{deps, [{erlmark, "~> 0.1"}]}.
 ```
 
 Elixir and Gleam have their own packages with native-feeling APIs, built on this one:
