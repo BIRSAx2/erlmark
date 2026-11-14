@@ -11,6 +11,7 @@
 -export([
     flag/1,
     unsafe_url/1,
+    slug/1,
     could_autolink/1,
     esc/1,
     url/1,
@@ -482,6 +483,20 @@ skip_controls(B) -> B.
 
 lower(C) when C >= $A, C =< $Z -> C + 32;
 lower(C) -> C.
+
+%% The GitHub-style anchor for a heading's plain text: lowercase, only letters, marks,
+%% numbers, connector punctuation, spaces and hyphens kept, spaces turned into hyphens.
+-spec slug(binary()) -> binary().
+slug(Text) ->
+    Lower =
+        case unicode:characters_to_binary(Text) of
+            Valid when is_binary(Valid) -> string:lowercase(Valid);
+            _ -> <<<<(lower(C))>> || <<C>> <= Text>>
+        end,
+    Kept = re:replace(Lower, "[^\\p{L}\\p{M}\\p{N}\\p{Pc} -]", "", [
+        unicode, ucp, global, {return, binary}
+    ]),
+    binary:replace(Kept, <<" ">>, <<"-">>, [global]).
 
 -spec ltrim(binary()) -> binary().
 ltrim(<<C, R/binary>>) when ?IS_SP(C) -> ltrim(R);

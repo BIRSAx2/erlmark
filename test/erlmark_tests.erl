@@ -1126,3 +1126,63 @@ alerts_test_() ->
             )
         )
     ].
+
+heading_ids_test_() ->
+    I = fun(Md) -> erlmark:to_html(Md, [{heading_ids, true}]) end,
+    [
+        ?_assertEqual(<<"<h1 id=\"hello-world\">Hello World</h1>\n">>, I(<<"# Hello World">>)),
+        %% repeated headings count up, skipping ids that are already taken
+        ?_assertEqual(
+            <<"<h1 id=\"hello\">Hello</h1>\n<h1 id=\"hello-1\">Hello</h1>\n<h1 id=\"hello-2\">Hello</h1>\n">>,
+            I(<<"# Hello\n# Hello\n# Hello">>)
+        ),
+        ?_assertEqual(
+            <<"<h1 id=\"foo-1\">foo-1</h1>\n<h1 id=\"foo\">foo</h1>\n<h1 id=\"foo-2\">foo</h1>\n">>,
+            I(<<"# foo-1\n# foo\n# foo">>)
+        ),
+        %% the text of the heading, not its markup
+        ?_assertEqual(
+            <<"<h2 id=\"tom--jerrys-great-code-adventure\">Tom &amp; Jerry's <em>Great</em> <code>code</code> Adventure!</h2>\n">>,
+            I(<<"## Tom & Jerry's *Great* `code` Adventure!">>)
+        ),
+        ?_assertEqual(
+            <<"<h1 id=\"link-text\"><a href=\"u\">link</a> text</h1>\n">>, I(<<"# [link](u) text">>)
+        ),
+        %% Unicode letters are kept, other symbols dropped, setext headings too
+        ?_assertEqual(
+            <<"<h1 id=\"ünïcode-héading-日本語\">Ünïcode Héading 日本語</h1>\n"/utf8>>,
+            I(<<"# Ünïcode Héading 日本語"/utf8>>)
+        ),
+        ?_assertEqual(<<"<h1 id=\"-emoji\">😀 emoji</h1>\n"/utf8>>, I(<<"# 😀 emoji"/utf8>>)),
+        ?_assertEqual(<<"<h1 id=\"setext\">Setext</h1>\n">>, I(<<"Setext\n======">>)),
+        ?_assertEqual(<<"<h1 id=\"\"></h1>\n">>, I(<<"#">>)),
+        %% numbering runs over the whole document, through quotes and lists
+        ?_assertMatch(
+            {_, _}, binary:match(I(<<"# A\n\n> ## A\n\n- ### A">>), <<"<h3 id=\"a-2\">A</h3>">>)
+        ),
+        %% a prefix only goes on the id
+        ?_assertEqual(
+            <<"<h1 id=\"user-content-a\">A</h1>\n">>,
+            erlmark:to_html(<<"# A">>, [{heading_ids, {prefix, <<"user-content-">>}}])
+        ),
+        %% anchors imply ids and add the link after the text
+        ?_assertEqual(
+            <<"<h1 id=\"a\">A<a href=\"#a\" aria-label=\"Link to heading 'A'\" data-heading-content=\"A\" class=\"anchor\"></a></h1>\n">>,
+            erlmark:to_html(<<"# A">>, [{heading_anchors, true}])
+        ),
+        ?_assertEqual(
+            <<"<h1 id=\"p-a\">A<a href=\"#a\" aria-label=\"Link to heading 'A'\" data-heading-content=\"A\" class=\"anchor\"></a></h1>\n">>,
+            erlmark:to_html(<<"# A">>, [{heading_anchors, true}, {heading_ids, {prefix, <<"p-">>}}])
+        ),
+        %% off by default, and the counter does not leak into the next conversion
+        ?_assertEqual(<<"<h1>A</h1>\n">>, html(<<"# A">>)),
+        ?_assertEqual(I(<<"# A">>), I(<<"# A">>))
+    ].
+
+%% Heading ids force sequential conversion, so the numbering is the same as without
+%% the parallel option, even for a large document.
+heading_ids_ignore_parallel_test() ->
+    Md = binary:copy(<<"# Title\n\ntext\n\n## Part\n\nmore text\n\n">>, 3000),
+    Opts = [{heading_ids, true}],
+    ?assertEqual(erlmark:to_html(Md, Opts), erlmark:to_html(Md, [{parallel, 4} | Opts])),
+    ?assertMatch({_, _}, binary:match(erlmark:to_html(Md, Opts), <<"id=\"title-2999\"">>)).

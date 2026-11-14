@@ -26,6 +26,8 @@
     | {breaks, boolean()}
     | {safe, boolean()}
     | {front_matter, boolean()}
+    | {heading_ids, true | {prefix, iodata()}}
+    | {heading_anchors, boolean()}
     | {code_class_prefix, iodata()}.
 %% Conversion options:
 %% <dl>
@@ -43,6 +45,14 @@
 %% `&lt;style&gt;' and similar tags. `alerts' renders block quotes that start with
 %% `[!NOTE]', `[!TIP]', `[!IMPORTANT]', `[!WARNING]' or `[!CAUTION]' as GitHub-style
 %% alerts. Conversion with extensions is always sequential. Default: none.</dd>
+%% <dt>`{heading_ids, true | {prefix, iodata()}}'</dt>
+%% <dd>Give every heading an `id' made from its text, as GitHub does: lowercase, letters,
+%% marks, numbers, `_' and `-' kept, spaces turned into hyphens. Repeated headings get
+%% `-1', `-2' and so on. A prefix is added to the `id' attribute only. Conversion with
+%% heading ids is always sequential. Default: off.</dd>
+%% <dt>`{heading_anchors, boolean()}'</dt>
+%% <dd>Also add a `&lt;a class="anchor"&gt;' link to each heading (implies `heading_ids').
+%% Default: `false'.</dd>
 %% <dt>`{front_matter, boolean()}'</dt>
 %% <dd>Skip a leading front matter block: a first line of `---' or `+++', then any lines,
 %% closed by a line holding the same delimiter (no other characters). The block is not
@@ -136,10 +146,17 @@ delimiter_line(Line, Delim) -> binary:replace(Line, <<"\r">>, <<>>) =:= Delim.
 %% The options that change rendering, kept in the process dictionary for the duration
 %% of one conversion and copied into worker processes. Read through erlmark_util:flag/1.
 render_flags(Opts) ->
-    lists:append([flag(K, V) || {K, V} <- Opts]).
+    Flags = lists:append([flag(K, V) || {K, V} <- Opts]),
+    case {lists:keymember(heading_anchors, 1, Flags), lists:keymember(heading_ids, 1, Flags)} of
+        {true, false} -> [{heading_ids, <<>>} | Flags];
+        _ -> Flags
+    end.
 
 flag(breaks, true) -> [{breaks, true}];
 flag(safe, true) -> [{safe, true}];
+flag(heading_ids, true) -> [{heading_ids, <<>>}];
+flag(heading_ids, {prefix, P}) -> [{heading_ids, iolist_to_binary(P)}];
+flag(heading_anchors, true) -> [{heading_anchors, true}];
 flag(code_class_prefix, P) -> [{code_class_prefix, iolist_to_binary(P)}];
 flag(_, _) -> [].
 
@@ -150,6 +167,7 @@ with_flags(Flags, Fun) ->
     try
         Fun()
     after
+        erase(erlmark_slugs),
         case Old of
             undefined -> erase(erlmark_flags);
             _ -> put(erlmark_flags, Old)
@@ -164,7 +182,13 @@ restore_flags(Flags) ->
 
 to_html_plain(Bin, Opts) ->
     Limit = proplists:get_value(spawn_above, Opts, ?DEFAULT_SPAWN_ABOVE),
-    case parallelism(proplists:get_value(parallel, Opts, false)) of
+    Workers =
+        case erlmark_util:flag(heading_ids) of
+            %% heading ids are numbered over the whole document
+            false -> parallelism(proplists:get_value(parallel, Opts, false));
+            _ -> 1
+        end,
+    case Workers of
         1 ->
             case Limit =/= infinity andalso byte_size(Bin) > Limit of
                 true -> convert_in_worker(Bin);
@@ -350,8 +374,13 @@ code_class_prefix() ->
 block({paragraph, Src}, Refs) ->
     [<<"<p>">>, erlmark_inline:render(Src, Refs), <<"</p>\n">>];
 block({heading, Level, Src}, Refs) ->
-    {Open, Close} = heading_tags(Level),
-    [Open, erlmark_inline:render(Src, Refs), Close];
+    case get(erlmark_flags) of
+        undefined ->
+            {Open, Close} = heading_tags(Level),
+            [Open, erlmark_inline:render(Src, Refs), Close];
+        _ ->
+            heading(Level, Src, Refs)
+    end;
 block({code, <<>>, Content}, _Refs) ->
     [<<"<pre><code>">>, erlmark_util:esc(Content), <<"</code></pre>\n">>];
 block({code, Info, Content}, _Refs) ->
@@ -445,6 +474,89 @@ cell_open(<<"th">>, center) -> <<"<th align=\"center\">">>.
 
 cell_close(<<"td">>) -> <<"</td>\n">>;
 cell_close(<<"th">>) -> <<"</th>\n">>.
+
+%% A heading when conversion options are set: ids and anchors.
+heading(Level, Src, Refs) ->
+    Inner = erlmark_inline:render(Src, Refs),
+    case erlmark_util:flag(heading_ids) of
+        false ->
+            {Open, Close} = heading_tags(Level),
+            [Open, Inner, Close];
+        Prefix ->
+            Text = heading_text(Inner),
+            Slug = unique_slug(erlmark_util:slug(Text)),
+            L = integer_to_binary(Level),
+            Anchor =
+                case erlmark_util:flag(heading_anchors) of
+                    true ->
+                        [
+                            <<"<a href=\"#">>,
+                            erlmark_util:esc(Slug),
+                            <<"\" aria-label=\"Link to heading '">>,
+                            erlmark_util:esc(Text),
+                            <<"'\" data-heading-content=\"">>,
+                            erlmark_util:esc(Text),
+                            <<"\" class=\"anchor\"></a>">>
+                        ];
+                    false ->
+                        []
+                end,
+            [
+                <<"<h">>,
+                L,
+                <<" id=\"">>,
+                erlmark_util:esc(Prefix),
+                erlmark_util:esc(Slug),
+                <<"\">">>,
+                Inner,
+                Anchor,
+                <<"</h">>,
+                L,
+                <<">\n">>
+            ]
+    end.
+
+%% The plain text of rendered inline HTML.
+heading_text(Inner) ->
+    Plain = iolist_to_binary(erlmark_util:strip_tags(Inner)),
+    unescape_text(Plain).
+
+unescape_text(Bin) ->
+    lists:foldl(
+        fun({From, To}, Acc) -> binary:replace(Acc, From, To, [global]) end,
+        Bin,
+        [
+            {<<"&lt;">>, <<"<">>},
+            {<<"&gt;">>, <<">">>},
+            {<<"&quot;">>, <<"\"">>},
+            {<<"&amp;">>, <<"&">>}
+        ]
+    ).
+
+%% Ids are unique over the document; a taken id gets the next free `-N' suffix.
+unique_slug(Base) ->
+    {Used, Next} =
+        case get(erlmark_slugs) of
+            undefined -> {#{}, #{}};
+            State -> State
+        end,
+    case maps:is_key(Base, Used) of
+        false ->
+            put(erlmark_slugs, {Used#{Base => true}, Next}),
+            Base;
+        true ->
+            free_slug(Base, maps:get(Base, Next, 1), Used, Next)
+    end.
+
+free_slug(Base, N, Used, Next) ->
+    Candidate = <<Base/binary, $-, (integer_to_binary(N))/binary>>,
+    case maps:is_key(Candidate, Used) of
+        true ->
+            free_slug(Base, N + 1, Used, Next);
+        false ->
+            put(erlmark_slugs, {Used#{Candidate => true}, Next#{Base => N + 1}}),
+            Candidate
+    end.
 
 alert_title(note) -> <<"Note">>;
 alert_title(tip) -> <<"Tip">>;
