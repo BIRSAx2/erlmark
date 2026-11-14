@@ -24,6 +24,7 @@ defmodule Erlmark do
           | {:parallel, false | :auto | pos_integer()}
           | {:extensions, [extension()]}
           | {:breaks, boolean()}
+          | {:safe, boolean()}
           | {:code_class_prefix, String.t()}
 
   @extensions [:autolink, :tagfilter]
@@ -46,6 +47,11 @@ defmodule Erlmark do
       short-lived process with a pre-sized heap, which avoids most garbage
       collection. `:infinity` always converts in the calling process. Defaults to `256`.
 
+    * `:safe` - safe output for untrusted input. Raw HTML is replaced by
+      `<!-- raw HTML omitted -->`, and link and image destinations using the `javascript:`,
+      `vbscript:`, `file:` or `data:` schemes become empty (`data:` is kept for PNG, GIF,
+      JPEG and WebP images). Defaults to `false`.
+
     * `:breaks` - render a line break inside a paragraph as `<br />`, as chat and comment
       systems expect. Defaults to `false`.
 
@@ -62,6 +68,9 @@ defmodule Erlmark do
       iex> Erlmark.to_html("visit www.example.com", extensions: [:autolink])
       "<p>visit <a href=\\"http://www.example.com\\">www.example.com</a></p>\\n"
 
+      iex> Erlmark.to_html("<script>alert(1)</script>", safe: true)
+      "<!-- raw HTML omitted -->\\n"
+
       iex> Erlmark.to_html("a\\nb", breaks: true)
       "<p>a<br />\\nb</p>\\n"
 
@@ -76,6 +85,7 @@ defmodule Erlmark do
   defp validate!({:spawn_above, :infinity} = opt), do: opt
   defp validate!({:spawn_above, n} = opt) when is_integer(n) and n >= 0, do: opt
   defp validate!({:breaks, b} = opt) when is_boolean(b), do: opt
+  defp validate!({:safe, b} = opt) when is_boolean(b), do: opt
   defp validate!({:code_class_prefix, p} = opt) when is_binary(p), do: opt
   defp validate!({:parallel, p} = opt) when p in [false, :auto], do: opt
   defp validate!({:parallel, n} = opt) when is_integer(n) and n >= 1, do: opt
@@ -92,12 +102,12 @@ defmodule Erlmark do
   end
 
   defp validate!({key, value})
-       when key in [:spawn_above, :parallel, :extensions, :breaks, :code_class_prefix] do
+       when key in [:spawn_above, :parallel, :extensions, :breaks, :safe, :code_class_prefix] do
     raise ArgumentError, "invalid value #{inspect(value)} for option #{inspect(key)}"
   end
 
   defp validate!(other) do
     raise ArgumentError,
-          "unknown option #{inspect(other)}, expected a keyword list with :spawn_above, :parallel, :extensions, :breaks or :code_class_prefix"
+          "unknown option #{inspect(other)}, expected a keyword list with :spawn_above, :parallel, :extensions, :breaks, :safe or :code_class_prefix"
   end
 end

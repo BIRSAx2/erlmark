@@ -35,6 +35,16 @@ defmodule ErlmarkTest do
     assert_raise ArgumentError, fn -> Erlmark.to_html("x", code_class_prefix: :atom) end
   end
 
+  test "safe mode" do
+    assert Erlmark.to_html("<script>x</script>", safe: true) == "<!-- raw HTML omitted -->\n"
+
+    assert Erlmark.to_html("[a](javascript:alert(1))", safe: true) ==
+             "<p><a href=\"\">a</a></p>\n"
+
+    assert Erlmark.to_html("<b>x</b>") == "<p><b>x</b></p>\n"
+    assert_raise ArgumentError, fn -> Erlmark.to_html("x", safe: 1) end
+  end
+
   test "rejects invalid options" do
     assert_raise ArgumentError, ~r/unknown option/, fn -> Erlmark.to_html("x", bogus: 1) end
 

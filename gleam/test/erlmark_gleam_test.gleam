@@ -90,3 +90,17 @@ pub fn code_class_prefix_test() {
     "class=\"hl-erl\"",
   )
 }
+
+pub fn safe_test() {
+  assert erlmark.to_html_with(
+      "<script>x</script>",
+      erlmark.new() |> erlmark.safe,
+    )
+    == "<!-- raw HTML omitted -->\n"
+  assert erlmark.to_html_with(
+      "[a](javascript:alert(1))",
+      erlmark.new() |> erlmark.safe,
+    )
+    == "<p><a href=\"\">a</a></p>\n"
+  assert erlmark.to_html("<b>x</b>") == "<p><b>x</b></p>\n"
+}

@@ -29,6 +29,7 @@ pub opaque type Options {
     extensions: List(Extension),
     breaks: Bool,
     code_class_prefix: Option(String),
+    safe: Bool,
   )
 }
 
@@ -67,7 +68,15 @@ pub fn new() -> Options {
     extensions: [],
     breaks: False,
     code_class_prefix: None,
+    safe: False,
   )
+}
+
+/// Safe output for untrusted input. Raw HTML is replaced by `<!-- raw HTML omitted -->`,
+/// and link and image destinations using the `javascript:`, `vbscript:`, `file:` or
+/// `data:` schemes become empty (`data:` is kept for PNG, GIF, JPEG and WebP images).
+pub fn safe(options: Options) -> Options {
+  Options(..options, safe: True)
 }
 
 /// Render a line break inside a paragraph as `<br />`, as chat and comment systems
@@ -143,6 +152,7 @@ pub fn to_html_with(markdown: String, options: Options) -> String {
     options.extensions,
     options.breaks,
     options.code_class_prefix,
+    options.safe,
   )
 }
 
@@ -154,4 +164,5 @@ fn convert(
   extensions: List(Extension),
   breaks: Bool,
   code_class_prefix: Option(String),
+  safe: Bool,
 ) -> String
