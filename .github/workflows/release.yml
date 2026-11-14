@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          otp-version: "29"
+          rebar3-version: "3"
+      - name: Tag matches the version in erlmark.app.src
+        run: |
+          vsn=$(sed -n 's/.*{vsn, "\(.*\)"}.*/\1/p' src/erlmark.app.src)
+          test "v$vsn" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} != app vsn v$vsn"; exit 1; }
+      - run: rebar3 fmt --check
+      - run: rebar3 eunit
+      - run: rebar3 dialyzer
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    # Holds HEX_API_KEY; add required reviewers to this environment in the repository settings.
+    environment: hex
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          otp-version: "29"
+          rebar3-version: "3"
+      - name: Publish to Hex
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+        run: rebar3 hex publish --yes
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" --generate-notes --verify-tag
