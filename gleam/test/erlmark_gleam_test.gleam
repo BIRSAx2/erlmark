@@ -111,3 +111,14 @@ pub fn front_matter_test() {
     == "<h1>Hi</h1>\n"
   assert string.contains(erlmark.to_html(md), "<hr />")
 }
+
+pub fn alerts_test() {
+  let html =
+    erlmark.to_html_with("> [!NOTE]\n> text", erlmark.new() |> erlmark.alerts)
+  assert string.contains(
+    html,
+    "<div class=\"markdown-alert markdown-alert-note\">",
+  )
+  assert string.contains(html, "<p class=\"markdown-alert-title\">Note</p>")
+  assert string.contains(erlmark.to_html("> [!NOTE]\n> text"), "<blockquote>")
+}

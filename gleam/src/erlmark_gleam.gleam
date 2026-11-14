@@ -58,6 +58,7 @@ pub type Threshold {
 type Extension {
   Autolink
   Tagfilter
+  Alerts
 }
 
 /// The default options: no extensions, sequential conversion, helper process above
@@ -128,6 +129,12 @@ pub fn spawn_above(options: Options, threshold: Threshold) -> Options {
     other -> other
   }
   Options(..options, threshold: threshold)
+}
+
+/// Render block quotes that start with `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`
+/// or `[!CAUTION]` as GitHub-style alerts. Conversion with extensions is always sequential.
+pub fn alerts(options: Options) -> Options {
+  add_extension(options, Alerts)
 }
 
 fn add_extension(options: Options, extension: Extension) -> Options {

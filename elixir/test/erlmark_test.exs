@@ -51,6 +51,13 @@ defmodule ErlmarkTest do
     assert_raise ArgumentError, fn -> Erlmark.to_html("x", front_matter: :yes) end
   end
 
+  test "alerts extension" do
+    html = Erlmark.to_html("> [!NOTE]\n> text", extensions: [:alerts])
+    assert html =~ ~s(<div class="markdown-alert markdown-alert-note">)
+    assert html =~ ~s(<p class="markdown-alert-title">Note</p>)
+    assert Erlmark.to_html("> [!NOTE]\n> text") =~ "<blockquote>"
+  end
+
   test "rejects invalid options" do
     assert_raise ArgumentError, ~r/unknown option/, fn -> Erlmark.to_html("x", bogus: 1) end
 
