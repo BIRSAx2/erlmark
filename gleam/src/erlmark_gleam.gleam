@@ -31,7 +31,14 @@ pub opaque type Options {
     code_class_prefix: Option(String),
     safe: Bool,
     front_matter: Bool,
+    heading_ids: HeadingIds,
+    heading_anchors: Bool,
   )
+}
+
+type HeadingIds {
+  NoHeadingIds
+  HeadingIds(prefix: String)
 }
 
 /// How many schedulers to convert a large document on. The output is identical to
@@ -72,7 +79,26 @@ pub fn new() -> Options {
     code_class_prefix: None,
     safe: False,
     front_matter: False,
+    heading_ids: NoHeadingIds,
+    heading_anchors: False,
   )
+}
+
+/// Give every heading an `id` made from its text, as GitHub does: lowercase, letters,
+/// marks, numbers, `_` and `-` kept, spaces turned into hyphens. Repeated headings get
+/// `-1`, `-2` and so on. Conversion with heading ids is always sequential.
+pub fn heading_ids(options: Options) -> Options {
+  Options(..options, heading_ids: HeadingIds(""))
+}
+
+/// Like `heading_ids`, with a prefix added to the `id` attribute (not to links).
+pub fn heading_ids_with_prefix(options: Options, prefix: String) -> Options {
+  Options(..options, heading_ids: HeadingIds(prefix))
+}
+
+/// Also add an `<a class="anchor">` link to each heading. Implies `heading_ids`.
+pub fn heading_anchors(options: Options) -> Options {
+  Options(..options, heading_anchors: True)
 }
 
 /// Skip a leading front matter block: a first line of `---` or `+++`, closed by a line
@@ -161,26 +187,8 @@ pub fn to_html(markdown: String) -> String
 /// // -> "<p>visit <a href=\"http://www.example.com\">www.example.com</a></p>\n"
 /// ```
 pub fn to_html_with(markdown: String, options: Options) -> String {
-  convert(
-    markdown,
-    options.threshold,
-    options.parallel,
-    options.extensions,
-    options.breaks,
-    options.code_class_prefix,
-    options.safe,
-    options.front_matter,
-  )
+  convert(markdown, options)
 }
 
-@external(erlang, "erlmark_gleam_ffi", "to_html")
-fn convert(
-  markdown: String,
-  threshold: Threshold,
-  parallel: Parallel,
-  extensions: List(Extension),
-  breaks: Bool,
-  code_class_prefix: Option(String),
-  safe: Bool,
-  front_matter: Bool,
-) -> String
+@external(erlang, "erlmark_gleam_ffi", "convert")
+fn convert(markdown: String, options: Options) -> String

@@ -122,3 +122,21 @@ pub fn alerts_test() {
   assert string.contains(html, "<p class=\"markdown-alert-title\">Note</p>")
   assert string.contains(erlmark.to_html("> [!NOTE]\n> text"), "<blockquote>")
 }
+
+pub fn heading_ids_test() {
+  assert erlmark.to_html_with(
+      "# Hello World\n# Hello World",
+      erlmark.new() |> erlmark.heading_ids,
+    )
+    == "<h1 id=\"hello-world\">Hello World</h1>\n<h1 id=\"hello-world-1\">Hello World</h1>\n"
+  assert erlmark.to_html_with(
+      "# A",
+      erlmark.new() |> erlmark.heading_ids_with_prefix("p-"),
+    )
+    == "<h1 id=\"p-a\">A</h1>\n"
+  assert string.contains(
+    erlmark.to_html_with("# A", erlmark.new() |> erlmark.heading_anchors),
+    "class=\"anchor\"",
+  )
+  assert erlmark.to_html("# A") == "<h1>A</h1>\n"
+}

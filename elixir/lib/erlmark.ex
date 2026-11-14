@@ -26,6 +26,8 @@ defmodule Erlmark do
           | {:breaks, boolean()}
           | {:safe, boolean()}
           | {:front_matter, boolean()}
+          | {:heading_ids, true | {:prefix, String.t()}}
+          | {:heading_anchors, boolean()}
           | {:code_class_prefix, String.t()}
 
   @extensions [:autolink, :tagfilter, :alerts]
@@ -49,6 +51,14 @@ defmodule Erlmark do
     * `:spawn_above` - inputs larger than this many bytes are converted in a
       short-lived process with a pre-sized heap, which avoids most garbage
       collection. `:infinity` always converts in the calling process. Defaults to `256`.
+
+    * `:heading_ids` - give every heading an `id` made from its text, as GitHub does
+      (lowercase, letters, marks, numbers, `_` and `-` kept, spaces turned into hyphens;
+      repeats get `-1`, `-2`). `{:prefix, "user-content-"}` adds a prefix to the `id`
+      attribute. Conversion with heading ids is always sequential. Defaults to off.
+
+    * `:heading_anchors` - also add an `<a class="anchor">` link to each heading. Implies
+      `:heading_ids`. Defaults to `false`.
 
     * `:front_matter` - skip a leading front matter block: a first line of `---` or `+++`,
       closed by a line with the same delimiter. The block is not rendered. An empty or
@@ -94,6 +104,9 @@ defmodule Erlmark do
   defp validate!({:breaks, b} = opt) when is_boolean(b), do: opt
   defp validate!({:safe, b} = opt) when is_boolean(b), do: opt
   defp validate!({:front_matter, b} = opt) when is_boolean(b), do: opt
+  defp validate!({:heading_anchors, b} = opt) when is_boolean(b), do: opt
+  defp validate!({:heading_ids, b} = opt) when is_boolean(b), do: opt
+  defp validate!({:heading_ids, {:prefix, p}} = opt) when is_binary(p), do: opt
   defp validate!({:code_class_prefix, p} = opt) when is_binary(p), do: opt
   defp validate!({:parallel, p} = opt) when p in [false, :auto], do: opt
   defp validate!({:parallel, n} = opt) when is_integer(n) and n >= 1, do: opt
@@ -124,6 +137,6 @@ defmodule Erlmark do
 
   defp validate!(other) do
     raise ArgumentError,
-          "unknown option #{inspect(other)}, expected a keyword list with :spawn_above, :parallel, :extensions, :breaks, :safe, :front_matter or :code_class_prefix"
+          "unknown option #{inspect(other)}, expected a keyword list with :spawn_above, :parallel, :extensions, :breaks, :safe, :front_matter, :heading_ids, :heading_anchors or :code_class_prefix"
   end
 end

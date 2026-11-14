@@ -58,6 +58,17 @@ defmodule ErlmarkTest do
     assert Erlmark.to_html("> [!NOTE]\n> text") =~ "<blockquote>"
   end
 
+  test "heading ids and anchors" do
+    assert Erlmark.to_html("# Hello World\n# Hello World", heading_ids: true) ==
+             "<h1 id=\"hello-world\">Hello World</h1>\n<h1 id=\"hello-world-1\">Hello World</h1>\n"
+
+    assert Erlmark.to_html("# A", heading_ids: {:prefix, "p-"}) == "<h1 id=\"p-a\">A</h1>\n"
+    assert Erlmark.to_html("# A", heading_anchors: true) =~ ~s(class="anchor")
+    assert Erlmark.to_html("# A", heading_ids: false) == "<h1>A</h1>\n"
+    assert_raise ArgumentError, fn -> Erlmark.to_html("x", heading_ids: :yes) end
+    assert_raise ArgumentError, fn -> Erlmark.to_html("x", heading_ids: {:prefix, 1}) end
+  end
+
   test "rejects invalid options" do
     assert_raise ArgumentError, ~r/unknown option/, fn -> Erlmark.to_html("x", bogus: 1) end
 
