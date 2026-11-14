@@ -24,6 +24,7 @@
     | {extensions, [autolink | tagfilter]}
     | {breaks, boolean()}
     | {safe, boolean()}
+    | {front_matter, boolean()}
     | {code_class_prefix, iodata()}.
 %% Conversion options:
 %% <dl>
@@ -40,6 +41,11 @@
 %% URLs and e-mail addresses into links. `tagfilter' escapes `&lt;script&gt;',
 %% `&lt;style&gt;' and similar tags. Conversion with extensions is always
 %% sequential. Default: none.</dd>
+%% <dt>`{front_matter, boolean()}'</dt>
+%% <dd>Skip a leading front matter block: a first line of `---' or `+++', then any lines,
+%% closed by a line holding the same delimiter (no other characters). The block is not
+%% rendered. An empty block, or one without a closing line, is ordinary Markdown.
+%% Default: `false'.</dd>
 %% <dt>`{safe, boolean()}'</dt>
 %% <dd>Safe output for untrusted input. Raw HTML blocks and inline raw HTML are replaced
 %% by `&lt;!-- raw HTML omitted --&gt;', and link and image destinations that use the
@@ -81,7 +87,7 @@ to_html(Markdown, []) ->
         false -> convert(Bin)
     end;
 to_html(Markdown, Opts) ->
-    Bin = iolist_to_binary(Markdown),
+    Bin = front_matter(proplists:get_value(front_matter, Opts, false), iolist_to_binary(Markdown)),
     Flags = render_flags(Opts),
     with_flags(Flags, fun() ->
         case proplists:get_value(extensions, Opts, []) of
@@ -89,6 +95,41 @@ to_html(Markdown, Opts) ->
             Exts -> convert_ext(Bin, Exts)
         end
     end).
+
+%% Drop a leading front matter block (see the `front_matter' option).
+front_matter(true, <<16#EF, 16#BB, 16#BF, Rest/binary>>) -> front_matter(true, Rest);
+front_matter(true, <<"---", _/binary>> = Bin) -> front_matter_block(Bin, <<"---">>);
+front_matter(true, <<"+++", _/binary>> = Bin) -> front_matter_block(Bin, <<"+++">>);
+front_matter(_, Bin) -> Bin.
+
+front_matter_block(Bin, Delim) ->
+    case binary:split(Bin, <<"\n">>) of
+        [First, Rest] ->
+            case delimiter_line(First, Delim) of
+                true -> front_matter_end(Rest, Delim, Bin, 0);
+                false -> Bin
+            end;
+        [_] ->
+            Bin
+    end.
+
+front_matter_end(Rest, Delim, Orig, N) ->
+    case binary:split(Rest, <<"\n">>) of
+        [Line, After] ->
+            case delimiter_line(Line, Delim) of
+                %% an empty block is not front matter
+                true when N =:= 0 -> Orig;
+                true -> After;
+                false -> front_matter_end(After, Delim, Orig, N + 1)
+            end;
+        [Last] ->
+            case delimiter_line(Last, Delim) of
+                true when N > 0 -> <<>>;
+                _ -> Orig
+            end
+    end.
+
+delimiter_line(Line, Delim) -> binary:replace(Line, <<"\r">>, <<>>) =:= Delim.
 
 %% The options that change rendering, kept in the process dictionary for the duration
 %% of one conversion and copied into worker processes. Read through erlmark_util:flag/1.

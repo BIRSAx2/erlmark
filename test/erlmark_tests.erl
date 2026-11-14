@@ -1015,3 +1015,36 @@ safe_output(Html) ->
     re:run(NoCode, "<(script|iframe|style|img [^>]*on[a-z]+=)", [caseless]) =:= nomatch andalso
         re:run(Html, "(href|src)=\"\\s*(javascript|vbscript|file|data:text)", [caseless]) =:=
             nomatch.
+
+front_matter_test_() ->
+    F = fun(Md) -> erlmark:to_html(Md, [{front_matter, true}]) end,
+    [
+        ?_assertEqual(<<"<h1>Hello</h1>\n">>, F(<<"---\ntitle: x\n---\n# Hello">>)),
+        ?_assertEqual(<<>>, F(<<"---\ntitle: x\n---\n">>)),
+        ?_assertEqual(<<"<h1>Hello</h1>\n">>, F(<<"+++\na = 1\n+++\n# Hello">>)),
+        ?_assertEqual(<<"<h1>Hello</h1>\n">>, F(<<"---\r\na: 1\r\n---\r\n# Hello">>)),
+        ?_assertEqual(
+            <<"<h1>Hello</h1>\n">>, F(<<16#EF, 16#BB, 16#BF, "---\na: 1\n---\n# Hello">>)
+        ),
+        %% only the first block, and its content is not Markdown
+        ?_assertEqual(
+            <<"<hr />\n<p>text</p>\n">>, F(<<"---\na: 1\n---\n---\ntext">>)
+        ),
+        ?_assertEqual(<<"<h1>Real</h1>\n">>, F(<<"---\nd: |\n  # not a heading\n---\n# Real">>)),
+        %% not front matter: unterminated, empty, not at the start, other delimiter text
+        ?_assertEqual(
+            erlmark:to_html(<<"---\ntitle: x\n# Hello">>), F(<<"---\ntitle: x\n# Hello">>)
+        ),
+        ?_assertEqual(erlmark:to_html(<<"---\n---\ntext">>), F(<<"---\n---\ntext">>)),
+        ?_assertEqual(
+            erlmark:to_html(<<"text\n---\na: 1\n---\n">>), F(<<"text\n---\na: 1\n---\n">>)
+        ),
+        ?_assertEqual(
+            erlmark:to_html(<<"---  \na: 1\n---\ntext">>), F(<<"---  \na: 1\n---\ntext">>)
+        ),
+        %% off by default
+        ?_assertEqual(
+            erlmark:to_html(<<"---\ntitle: x\n---\n# Hello">>),
+            html(<<"---\ntitle: x\n---\n# Hello">>)
+        )
+    ].
