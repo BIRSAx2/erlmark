@@ -7,12 +7,12 @@
 # You should check this file into your source control repository.
 
 packages = [
-  { name = "erlmark", version = "0.1.1", build_tools = ["rebar3"], requirements = [], otp_app = "erlmark", source = "hex", outer_checksum = "C2806A139BD04BAA66F0A5220A9EEFDC66F338657D94BB479FC7AE8C73D05285" },
+  { name = "erlmark", version = "0.1.2", build_tools = ["rebar3"], requirements = [], otp_app = "erlmark", source = "hex", outer_checksum = "C6EB685AB77645F5E6AED00AB3CF0E910B9C9ABD2B4A2E9E726DDDC6DB280EB4" },
   { name = "gleam_stdlib", version = "1.0.5", build_tools = ["gleam"], requirements = [], otp_app = "gleam_stdlib", source = "hex", outer_checksum = "CEE5B6C076A85B45F60C585F4316C63EC8B7127C119D5738C3958A9C4D50404E" },
   { name = "gleeunit", version = "1.11.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "gleeunit", source = "hex", outer_checksum = "EC31ABA74256AEA531EDF8169931D775BBB384FED0A8A1BDC4DD9354E3E21826" },
 ]
 
 [requirements]
-erlmark = { version = ">= 0.1.1 and < 1.0.0" }
+erlmark = { version = "== 0.1.2" }
 gleam_stdlib = { version = ">= 0.44.0 and < 2.0.0" }
 gleeunit = { version = ">= 1.0.0 and < 2.0.0" }
