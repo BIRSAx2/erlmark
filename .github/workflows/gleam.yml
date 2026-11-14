@@ -33,8 +33,12 @@ jobs:
           gleam-version: "1.17.0"
           rebar3-version: "3"
       # The committed requirement pins this repository's version, which is not on Hex until
-      # release; test against the latest published erlmark instead.
+      # release. Resolve against the latest published erlmark, then replace its sources with
+      # the ones in this checkout so the wrapper is tested against the current core.
       - run: sed -i 's/^erlmark = .*/erlmark = ">= 0.1.1 and < 1.0.0"/' gleam.toml
       - run: gleam deps download
+      - run: |
+          rm -rf build/packages/erlmark/src build/packages/erlmark/include
+          cp -R ../src ../include build/packages/erlmark/
       - run: gleam format --check src test
       - run: gleam test

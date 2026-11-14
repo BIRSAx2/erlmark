@@ -39,11 +39,13 @@ jobs:
           mix format --check-formatted
           mix compile --warnings-as-errors
           mix test
-      - name: Gleam package (against the latest published erlmark)
+      - name: Gleam package (against the sibling sources)
         working-directory: gleam
         run: |
           sed -i 's/^erlmark = .*/erlmark = ">= 0.1.1 and < 1.0.0"/' gleam.toml
           gleam deps download
+          rm -rf build/packages/erlmark/src build/packages/erlmark/include
+          cp -R ../src ../include build/packages/erlmark/
           gleam format --check src test
           gleam test
 
