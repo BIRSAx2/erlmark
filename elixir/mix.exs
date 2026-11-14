@@ -1,7 +1,7 @@
 defmodule ErlmarkEx.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.1.2"
   @source_url "https://github.com/BIRSAx2/erlmark"
 
   def project do
@@ -30,10 +30,11 @@ defmodule ErlmarkEx.MixProject do
     ]
   end
 
+  # The wrapper and the Erlang package are released together at the same version.
   # Set ERLMARK_PATH=.. to build against the sibling Erlang sources instead of Hex.
   defp erlmark_dep do
     case System.get_env("ERLMARK_PATH") do
-      nil -> {:erlmark, "~> 0.1.1"}
+      nil -> {:erlmark, "== #{@version}"}
       path -> {:erlmark, path: path, manager: :rebar3}
     end
   end
@@ -45,15 +46,15 @@ defmodule ErlmarkEx.MixProject do
         "GitHub" => @source_url <> "/tree/main/elixir",
         "erlmark" => "https://hex.pm/packages/erlmark"
       },
-      files: ~w(lib mix.exs README.md CHANGELOG.md LICENSE)
+      files: ~w(lib mix.exs README.md LICENSE)
     ]
   end
 
   defp docs do
     [
       main: "readme",
-      extras: ["README.md", "CHANGELOG.md", "LICENSE"],
-      source_url_pattern: @source_url <> "/blob/elixir-v#{@version}/elixir/%{path}#L%{line}"
+      extras: ["README.md", "LICENSE"],
+      source_url_pattern: @source_url <> "/blob/v#{@version}/elixir/%{path}#L%{line}"
     ]
   end
 end
