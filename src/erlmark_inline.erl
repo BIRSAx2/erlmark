@@ -573,6 +573,8 @@ inline_link(R1) ->
 %% between it and an opener of the same character and the exact same length,
 %% the deferred algorithm below would pair them identically (nearest opener, no
 %% remnants, rule-of-3 cannot apply to equal lengths), so resolve right away.
+%% The opener must not be able to close: a run that can do both is itself a closer
+%% and has to look for an opener first.
 %% The walk is bounded: finished fragments pile up in long runs of emphasis, and an
 %% unbounded walk would make the whole scan quadratic. Giving up is always safe:
 %% the closer is then just pushed and the deferred algorithm resolves it.
@@ -580,7 +582,7 @@ eager(St, C, N, Acc) -> eager(St, C, N, Acc, ?EAGER_LIMIT).
 
 eager(_, _, _, _, 0) -> none;
 eager([X | T], C, N, Acc, L) when not is_tuple(X) -> eager(T, C, N, [X | Acc], L - 1);
-eager([{d, C, N, true, _, _} | Deeper], C, N, Acc, _) -> {ok, wrap(C, N, Acc), Deeper};
+eager([{d, C, N, true, false, _} | Deeper], C, N, Acc, _) -> {ok, wrap(C, N, Acc), Deeper};
 eager(_, _, _, _, _) -> none.
 
 %%--------------------------------------------------------------------

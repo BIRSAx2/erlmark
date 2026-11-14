@@ -844,3 +844,12 @@ long_lazy_run_is_linear_test_() ->
         {T, _} = timer:tc(fun() -> erlmark:to_html(<<"- a\n", Lines/binary>>) end),
         ?assert(T < 2000000)
     end}.
+
+%% A closer that can also open must get to close an earlier opener before a later closer
+%% can bind to it, even with an unmatched bracket in between.
+emphasis_both_flanking_closer_test_() ->
+    [
+        ?_assertEqual(<<"<p><em>[a</em>r*</p>\n">>, html(<<"*[a*r*">>)),
+        ?_assertEqual(<<"<p><em>_</em>)*</p>\n">>, html(<<"*_*)*">>)),
+        ?_assertEqual(<<"<p><em>a</em>b*</p>\n">>, html(<<"*a*b*">>))
+    ].
