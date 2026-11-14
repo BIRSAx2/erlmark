@@ -16,9 +16,13 @@
 -export([to_html/1, to_html/2]).
 -export_type([refs/0, option/0, extension/0]).
 
--type refs() :: #{binary() => {binary(), binary() | none}}.
+-type refs() ::
+    #{
+        binary() => {binary(), binary() | none},
+        {footnote, binary()} => {binary(), [term()]}
+    }.
 
--type extension() :: autolink | tagfilter | alerts.
+-type extension() :: autolink | tagfilter | alerts | footnotes.
 -type option() ::
     {spawn_above, non_neg_integer() | infinity}
     | {parallel, false | auto | pos_integer()}
@@ -44,7 +48,8 @@
 %% URLs and e-mail addresses into links. `tagfilter' escapes `&lt;script&gt;',
 %% `&lt;style&gt;' and similar tags. `alerts' renders block quotes that start with
 %% `[!NOTE]', `[!TIP]', `[!IMPORTANT]', `[!WARNING]' or `[!CAUTION]' as GitHub-style
-%% alerts. Conversion with extensions is always sequential. Default: none.</dd>
+%% alerts. `footnotes' adds `[^label]' references and `[^label]: text' definitions
+%% (see the README). Conversion with extensions is always sequential. Default: none.</dd>
 %% <dt>`{heading_ids, true | {prefix, iodata()}}'</dt>
 %% <dd>Give every heading an `id' made from its text, as GitHub does: lowercase, letters,
 %% marks, numbers, `_' and `-' kept, spaces turned into hyphens. Repeated headings get
@@ -153,6 +158,7 @@ render_flags(Opts) ->
     end.
 
 flag(breaks, true) -> [{breaks, true}];
+flag(extensions, Exts) -> [{footnotes, true} || lists:member(footnotes, Exts)];
 flag(safe, true) -> [{safe, true}];
 flag(heading_ids, true) -> [{heading_ids, <<>>}];
 flag(heading_ids, {prefix, P}) -> [{heading_ids, iolist_to_binary(P)}];
@@ -168,6 +174,7 @@ with_flags(Flags, Fun) ->
         Fun()
     after
         erase(erlmark_slugs),
+        erase(erlmark_fn),
         case Old of
             undefined -> erase(erlmark_flags);
             _ -> put(erlmark_flags, Old)
@@ -303,20 +310,23 @@ convert_ext(Bin, Exts) ->
     run_in_worker(fun() -> convert_exts(Bin, Exts) end, Bin).
 
 convert_exts(Bin, Exts) ->
-    {Blocks00, Refs} = erlmark_block:parse(Bin),
+    {Blocks00, Refs0} = erlmark_block:parse(Bin),
     erase(erlmark_unclosed),
-    Blocks0 =
-        case lists:member(alerts, Exts) of
-            true -> erlmark_gfm:alerts(Blocks00);
-            false -> Blocks00
-        end,
+    Alerts = lists:member(alerts, Exts),
     Auto = lists:member(autolink, Exts),
-    Blocks =
-        case Auto of
-            true -> map_src(fun erlmark_gfm:pre/1, Blocks0);
-            false -> Blocks0
+    Blocks0 = map_blocks(Alerts, fun erlmark_gfm:alerts/1, Blocks00),
+    Blocks1 = map_blocks(Auto, fun(Bs) -> map_src(fun erlmark_gfm:pre/1, Bs) end, Blocks0),
+    Refs = map_footnotes(
+        fun(Bs) ->
+            map_blocks(
+                Auto,
+                fun(B) -> map_src(fun erlmark_gfm:pre/1, B) end,
+                map_blocks(Alerts, fun erlmark_gfm:alerts/1, Bs)
+            )
         end,
-    Html0 = iolist_to_binary(blocks(Blocks, Refs)),
+        Refs0
+    ),
+    Html0 = iolist_to_binary([blocks(Blocks1, Refs), footnotes_section(Refs)]),
     Html1 =
         case Auto of
             true -> erlmark_gfm:post(Html0);
@@ -326,6 +336,19 @@ convert_exts(Bin, Exts) ->
         true -> erlmark_gfm:tagfilter(Html1);
         false -> Html1
     end.
+
+map_blocks(true, Fun, Blocks) -> Fun(Blocks);
+map_blocks(false, _Fun, Blocks) -> Blocks.
+
+%% Apply Fun to the blocks of every footnote definition.
+map_footnotes(Fun, Refs) ->
+    maps:map(
+        fun
+            ({footnote, _}, {Label, Blocks}) -> {Label, Fun(Blocks)};
+            (_, Other) -> Other
+        end,
+        Refs
+    ).
 
 %% Apply Fun to the inline source of every paragraph, heading and table cell.
 map_src(Fun, Blocks) -> [map_src1(Fun, B) || B <- Blocks].
@@ -557,6 +580,89 @@ free_slug(Base, N, Used, Next) ->
             put(erlmark_slugs, {Used#{Candidate => true}, Next#{Base => N + 1}}),
             Candidate
     end.
+
+%% The footnotes that were referenced, numbered in the order of their first use. Rendering
+%% a note can use further notes, which are numbered after the ones already there.
+footnotes_section(Refs) ->
+    case erlmark_util:flag(footnotes) of
+        true ->
+            case footnote_items(1, Refs) of
+                [] ->
+                    [];
+                Items ->
+                    [
+                        <<"<section class=\"footnotes\" data-footnotes>\n<ol>\n">>,
+                        Items,
+                        <<"</ol>\n</section>\n">>
+                    ]
+            end;
+        false ->
+            []
+    end.
+
+footnote_items(N, Refs) ->
+    {_Next, Seen} =
+        case get(erlmark_fn) of
+            undefined -> {1, #{}};
+            State -> State
+        end,
+    case [{Key, V} || {Key, {M, _, _} = V} <- maps:to_list(Seen), M =:= N] of
+        [{Key, {_, Label, _Count}}] ->
+            #{Key := {_, Blocks}} = Refs,
+            Item = footnote_item(N, Label, Blocks, Refs),
+            [Item | footnote_items(N + 1, Refs)];
+        [] ->
+            []
+    end.
+
+footnote_item(N, Label, Blocks, Refs) ->
+    %% The body is rendered first: it can use this very note, which adds a back link.
+    Body =
+        case lists:reverse(Blocks) of
+            [{paragraph, Src} | RevBefore] ->
+                Before = blocks(lists:reverse(RevBefore), Refs),
+                Text = erlmark_inline:render(Src, Refs),
+                [Before, <<"<p>">>, Text, $\s, backrefs(N, Label), <<"</p>\n">>];
+            [] ->
+                [<<"<p>">>, backrefs(N, Label), <<"</p>\n">>];
+            _ ->
+                [blocks(Blocks, Refs), backrefs(N, Label), $\n]
+        end,
+    [<<"<li id=\"fn-">>, erlmark_util:esc(Label), <<"\">\n">>, Body, <<"</li>\n">>].
+
+%% How many times the note with this label has been used so far.
+footnote_uses(Label) ->
+    {_Next, Seen} = get(erlmark_fn),
+    hd([Count || {_, {_, L, Count}} <- maps:to_list(Seen), L =:= Label]).
+
+%% One back link per use of the note; the later ones show which use they return to.
+backrefs(N, Label) ->
+    Count = footnote_uses(Label),
+    NB = integer_to_binary(N),
+    First = backref(<<"fnref-", Label/binary>>, NB, <<"↩"/utf8>>),
+    Others = [
+        begin
+            KB = integer_to_binary(K),
+            Idx = <<NB/binary, $-, KB/binary>>,
+            Id = <<"fnref-", Label/binary, $-, KB/binary>>,
+            backref(Id, Idx, [<<"↩"/utf8>>, <<"<sup class=\"footnote-ref\">">>, KB, <<"</sup>">>])
+        end
+     || K <- lists:seq(2, Count)
+    ],
+    lists:join($\s, [First | Others]).
+
+backref(Id, Idx, Content) ->
+    [
+        <<"<a href=\"#">>,
+        erlmark_util:url(Id),
+        <<"\" class=\"footnote-backref\" data-footnote-backref data-footnote-backref-idx=\"">>,
+        Idx,
+        <<"\" aria-label=\"Back to reference ">>,
+        Idx,
+        <<"\">">>,
+        Content,
+        <<"</a>">>
+    ].
 
 alert_title(note) -> <<"Note">>;
 alert_title(tip) -> <<"Tip">>;

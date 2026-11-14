@@ -305,10 +305,60 @@ block(<<C, _/binary>> = T, N, [_ | Rest] = Lines, Refs, Dp) ->
                 none -> paragraph(Lines, Refs);
                 Type -> html_block(Type, Lines, Refs)
             end;
-        Dg when ?IS_DIGIT(Dg) -> list_or_para(T, Lines, Refs, Dp);
+        Dg when ?IS_DIGIT(Dg) ->
+            list_or_para(T, Lines, Refs, Dp);
+        $[ ->
+            case get(erlmark_flags) of
+                undefined ->
+                    paragraph(Lines, Refs);
+                _ ->
+                    case erlmark_util:flag(footnotes) of
+                        true -> footnote_or_para(T, Lines, Refs, Dp);
+                        false -> paragraph(Lines, Refs)
+                    end
+            end;
         _ ->
             paragraph(Lines, Refs)
     end.
+
+%% `[^label]: text` with a body that continues over lines indented four columns (like
+%% a list item). The definition is kept with the link references under the key
+%% `{footnote, NormalisedLabel}` and leaves no block behind; the first definition of a
+%% label wins.
+footnote_or_para(T, Lines, Refs, Dp) ->
+    case footnote_def(T) of
+        {ok, Label, After} ->
+            [_ | Rest] = Lines,
+            {ItemLines, Rest2, BlankAfter} = item_lines(Rest, 4, erlmark_util:ltrim(After)),
+            {Blocks, _Gap, Refs2} = item_blocks(ItemLines, Refs, Dp + 1),
+            Key = {footnote, erlmark_util:norm_label(Label)},
+            Refs3 =
+                case maps:is_key(Key, Refs2) of
+                    true -> Refs2;
+                    false -> Refs2#{Key => {Label, Blocks}}
+                end,
+            {skip, Rest2, Refs3, BlankAfter};
+        none ->
+            paragraph(Lines, Refs)
+    end.
+
+%% A footnote label has no spaces or brackets and is not empty.
+footnote_def(<<"[^", R/binary>>) ->
+    case binary:split(R, <<"]:">>) of
+        [Label, After] when Label =/= <<>> ->
+            case has_label_stop(Label) of
+                true -> none;
+                false -> {ok, Label, After}
+            end;
+        _ ->
+            none
+    end;
+footnote_def(_) ->
+    none.
+
+has_label_stop(<<C, _/binary>>) when C =:= $\s; C =:= $\t; C =:= $[; C =:= $] -> true;
+has_label_stop(<<_, R/binary>>) -> has_label_stop(R);
+has_label_stop(<<>>) -> false.
 
 %%--------------------------------------------------------------------
 %% ATX headings, thematic breaks, setext
@@ -709,6 +759,8 @@ interrupts(<<C, _/binary>> = T) ->
                 _ ->
                     false
             end;
+        $[ ->
+            erlmark_util:flag(footnotes) andalso footnote_def(T) =/= none;
         _ ->
             false
     end.
@@ -736,7 +788,7 @@ paragraph([First | Rest], Refs) ->
         true, true, false, false, true, false, true, true, false, false, false, false, false, false,
         false, false, false, false, true, true, false, false, false, true, true, true, true, true,
         true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
-        true, true, true, true, true, true, true, true, true, true, true, true, false, false, true,
+        true, true, true, true, true, true, true, true, false, true, true, true, false, false, true,
         true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
         true, true, true, true, true, true, true, true, true, true, true, true, true, false, false,
         true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,

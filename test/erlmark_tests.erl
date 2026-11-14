@@ -1186,3 +1186,144 @@ heading_ids_ignore_parallel_test() ->
     Opts = [{heading_ids, true}],
     ?assertEqual(erlmark:to_html(Md, Opts), erlmark:to_html(Md, [{parallel, 4} | Opts])),
     ?assertMatch({_, _}, binary:match(erlmark:to_html(Md, Opts), <<"id=\"title-2999\"">>)).
+
+footnotes_test_() ->
+    F = fun(Md) -> erlmark:to_html(Md, [{extensions, [footnotes]}]) end,
+    Ref = fun(Label, Id, N) ->
+        iolist_to_binary([
+            "<sup class=\"footnote-ref\"><a href=\"#fn-",
+            Label,
+            "\" id=\"",
+            Id,
+            "\" data-footnote-ref>",
+            N,
+            "</a></sup>"
+        ])
+    end,
+    Back = fun(Id, Idx, Content) ->
+        iolist_to_binary([
+            "<a href=\"#",
+            Id,
+            "\" class=\"footnote-backref\" data-footnote-backref data-footnote-backref-idx=\"",
+            Idx,
+            "\" aria-label=\"Back to reference ",
+            Idx,
+            "\">",
+            Content,
+            "</a>"
+        ])
+    end,
+    Arrow = <<"↩"/utf8>>,
+    Section = fun(Items) ->
+        iolist_to_binary([
+            "<section class=\"footnotes\" data-footnotes>\n<ol>\n", Items, "</ol>\n</section>\n"
+        ])
+    end,
+    [
+        ?_assertEqual(
+            iolist_to_binary([
+                "<p>Text",
+                Ref(<<"1">>, <<"fnref-1">>, <<"1">>),
+                " more.</p>\n",
+                Section([
+                    "<li id=\"fn-1\">\n<p>The note. ",
+                    Back(<<"fnref-1">>, <<"1">>, Arrow),
+                    "</p>\n</li>\n"
+                ])
+            ]),
+            F(<<"Text[^1] more.\n\n[^1]: The note.">>)
+        ),
+        %% numbered in the order of first use, listed in that order
+        ?_assertMatch(
+            {_, _},
+            binary:match(
+                F(<<"A[^b] B[^a].\n\n[^a]: first\n[^b]: second">>),
+                <<"<li id=\"fn-b\">\n<p>second ">>
+            )
+        ),
+        %% repeated use: numbered ids and one back link per use
+        ?_assertEqual(
+            iolist_to_binary([
+                "<p>A",
+                Ref(<<"a">>, <<"fnref-a">>, <<"1">>),
+                " and A",
+                Ref(<<"a">>, <<"fnref-a-2">>, <<"1">>),
+                ".</p>\n",
+                Section([
+                    "<li id=\"fn-a\">\n<p>first ",
+                    Back(<<"fnref-a">>, <<"1">>, Arrow),
+                    " ",
+                    Back(<<"fnref-a-2">>, <<"1-2">>, [Arrow, "<sup class=\"footnote-ref\">2</sup>"]),
+                    "</p>\n</li>\n"
+                ])
+            ]),
+            F(<<"A[^a] and A[^a].\n\n[^a]: first">>)
+        ),
+        %% a body of several blocks: the back link goes after the last block, or into a last paragraph
+        ?_assertEqual(
+            iolist_to_binary([
+                "<p>x",
+                Ref(<<"1">>, <<"fnref-1">>, <<"1">>),
+                "</p>\n",
+                Section([
+                    "<li id=\"fn-1\">\n<p>p</p>\n<pre><code>c\n</code></pre>\n",
+                    Back(<<"fnref-1">>, <<"1">>, Arrow),
+                    "\n</li>\n"
+                ])
+            ]),
+            F(<<"x[^1]\n\n[^1]: p\n\n    ```\n    c\n    ```">>)
+        ),
+        %% labels match without regard to case; the definition's spelling is used in ids
+        ?_assertMatch({_, _}, binary:match(F(<<"[^A] [^a]\n\n[^A]: x">>), <<"id=\"fnref-A-2\"">>)),
+        %% a note used by another note
+        ?_assertMatch(
+            {_, _},
+            binary:match(F(<<"x[^1]\n\n[^1]: one[^2]\n[^2]: two">>), <<"<li id=\"fn-2\">">>)
+        ),
+        %% a note that uses itself gets a back link for that use too
+        ?_assertMatch(
+            {_, _},
+            binary:match(
+                F(<<"x[^1]\n\n[^1]: a\n\n    b[^1]">>), <<"data-footnote-backref-idx=\"1-2\"">>
+            )
+        ),
+        %% not references: undefined, unused (dropped), bad labels
+        ?_assertEqual(<<"<p>Undefined[^nope] ref.</p>\n">>, F(<<"Undefined[^nope] ref.">>)),
+        ?_assertEqual(<<"<p>No ref.</p>\n">>, F(<<"No ref.\n\n[^unused]: never used">>)),
+        ?_assertEqual(
+            <<"<p>[^]: empty label</p>\n<p>ref[^]</p>\n">>, F(<<"[^]: empty label\n\nref[^]">>)
+        ),
+        %% a definition ends a paragraph; so does a blank line before unindented text
+        ?_assertMatch({_, _}, binary:match(F(<<"para\n[^1]: n\n\nref[^1]">>), <<"<section">>)),
+        ?_assertMatch(
+            {_, _},
+            binary:match(
+                F(<<"x[^1]\n\n[^1]: n\n\nafter paragraph">>), <<"<p>after paragraph</p>\n<section">>
+            )
+        ),
+        %% definitions inside a block quote leave the quote empty
+        ?_assertMatch(
+            {_, _},
+            binary:match(
+                F(<<"Text[^1].\n\n> [^1]: in quote def">>),
+                <<"<blockquote>\n</blockquote>\n<section">>
+            )
+        ),
+        %% footnotes work together with the other extensions
+        ?_assertMatch(
+            {_, _},
+            binary:match(
+                erlmark:to_html(<<"x[^1]\n\n[^1]: see www.example.com">>, [
+                    {extensions, [footnotes, autolink]}
+                ]),
+                <<"<a href=\"http://www.example.com\">">>
+            )
+        ),
+        %% off unless asked for: the definition is an ordinary link reference definition
+        ?_assertEqual(
+            erlmark:to_html(<<"Text[^1].\n\n[^1]: http://x">>),
+            html(<<"Text[^1].\n\n[^1]: http://x">>)
+        ),
+        %% the numbering does not leak into the next conversion
+        ?_assertEqual(F(<<"a[^1]\n\n[^1]: n">>), F(<<"a[^1]\n\n[^1]: n">>))
+    ].

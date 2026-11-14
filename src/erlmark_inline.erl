@@ -250,6 +250,11 @@ special(C, R, Prev, St, Rf) when C =:= $*; C =:= $_; C =:= $~ ->
         _ ->
             delim_run(C, 1, R, Prev, St, Rf)
     end;
+special($[, <<$^, R0/binary>> = R, _P, St, {Refs, B, LN} = Rf) ->
+    case footnote_ref(R0, Refs) of
+        {ok, Node, Rest} -> scan(Rest, $], [Node | St], Rf);
+        none -> scan(R, $[, [{b, false, LN, R} | St], {Refs, [{false, LN, R} | B], LN})
+    end;
 special($[, R, _P, St, {Refs, B, LN}) ->
     scan(R, $[, [{b, false, LN, R} | St], {Refs, [{false, LN, R} | B], LN});
 special($!, <<$[, R/binary>>, _P, St, {Refs, B, LN}) ->
@@ -282,6 +287,43 @@ special($<, R, _P, St, Rf) ->
                     scan(R, $<, [<<"&lt;">> | St], Rf)
             end
     end.
+
+%% `[^label]` where a footnote with that label is defined (and footnotes are enabled).
+footnote_ref(R, Refs) ->
+    case erlmark_util:flag(footnotes) of
+        true ->
+            case binary:split(R, <<"]">>) of
+                [Label, Rest] when Label =/= <<>> ->
+                    Key = {footnote, erlmark_util:norm_label(Label)},
+                    case Refs of
+                        #{Key := {DefLabel, _Blocks}} -> footnote_node(Key, DefLabel, Rest);
+                        _ -> none
+                    end;
+                _ ->
+                    none
+            end;
+        false ->
+            none
+    end.
+
+footnote_node(Key, DefLabel, Rest) ->
+    {N, Label, K} = erlmark_util:footnote_reference(Key, DefLabel),
+    Id =
+        case K of
+            1 -> <<"fnref-", Label/binary>>;
+            _ -> <<"fnref-", Label/binary, $-, (integer_to_binary(K))/binary>>
+        end,
+    {ok,
+        [
+            <<"<sup class=\"footnote-ref\"><a href=\"#fn-">>,
+            erlmark_util:url(Label),
+            <<"\" id=\"">>,
+            erlmark_util:esc(Id),
+            <<"\" data-footnote-ref>">>,
+            integer_to_binary(N),
+            <<"</a></sup>">>
+        ],
+        Rest}.
 
 %% Raw inline HTML, or the placeholder that replaces it in safe mode.
 raw_html(Tag) ->

@@ -12,6 +12,7 @@
     flag/1,
     unsafe_url/1,
     slug/1,
+    footnote_reference/2,
     could_autolink/1,
     esc/1,
     url/1,
@@ -497,6 +498,26 @@ slug(Text) ->
         unicode, ucp, global, {return, binary}
     ]),
     binary:replace(Kept, <<" ">>, <<"-">>, [global]).
+
+%% Note a use of a footnote and return its number (numbers follow the first use) and
+%% how many times it has been used, this use included. The state lives in the process
+%% dictionary for the duration of one conversion.
+-spec footnote_reference({footnote, binary()}, binary()) ->
+    {pos_integer(), binary(), pos_integer()}.
+footnote_reference(Key, DefLabel) ->
+    {Next, Seen} =
+        case get(erlmark_fn) of
+            undefined -> {1, #{}};
+            State -> State
+        end,
+    case Seen of
+        #{Key := {N, Label, Count}} ->
+            put(erlmark_fn, {Next, Seen#{Key => {N, Label, Count + 1}}}),
+            {N, Label, Count + 1};
+        _ ->
+            put(erlmark_fn, {Next + 1, Seen#{Key => {Next, DefLabel, 1}}}),
+            {Next, DefLabel, 1}
+    end.
 
 -spec ltrim(binary()) -> binary().
 ltrim(<<C, R/binary>>) when ?IS_SP(C) -> ltrim(R);
