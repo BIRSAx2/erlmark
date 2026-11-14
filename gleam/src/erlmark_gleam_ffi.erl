@@ -1,14 +1,15 @@
 %% @private
 %% Turns the typed options of erlmark_gleam into the option list erlmark expects.
 -module(erlmark_gleam_ffi).
--export([to_html/7]).
+-export([to_html/8]).
 
-to_html(Markdown, Threshold, Parallel, Extensions, Breaks, CodeClassPrefix, Safe) ->
+to_html(Markdown, Threshold, Parallel, Extensions, Breaks, CodeClassPrefix, Safe, FrontMatter) ->
     Opts =
         [{spawn_above, threshold(Threshold)}, {parallel, parallel(Parallel)}] ++
             [{extensions, Extensions} || Extensions =/= []] ++
             [{breaks, true} || Breaks] ++
             [{safe, true} || Safe] ++
+            [{front_matter, true} || FrontMatter] ++
             case CodeClassPrefix of
                 {some, Prefix} -> [{code_class_prefix, Prefix}];
                 none -> []

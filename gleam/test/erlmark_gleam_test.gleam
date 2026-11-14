@@ -104,3 +104,10 @@ pub fn safe_test() {
     == "<p><a href=\"\">a</a></p>\n"
   assert erlmark.to_html("<b>x</b>") == "<p><b>x</b></p>\n"
 }
+
+pub fn front_matter_test() {
+  let md = "---\ntitle: x\n---\n# Hi"
+  assert erlmark.to_html_with(md, erlmark.new() |> erlmark.front_matter)
+    == "<h1>Hi</h1>\n"
+  assert string.contains(erlmark.to_html(md), "<hr />")
+}

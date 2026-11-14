@@ -25,6 +25,7 @@ defmodule Erlmark do
           | {:extensions, [extension()]}
           | {:breaks, boolean()}
           | {:safe, boolean()}
+          | {:front_matter, boolean()}
           | {:code_class_prefix, String.t()}
 
   @extensions [:autolink, :tagfilter]
@@ -46,6 +47,10 @@ defmodule Erlmark do
     * `:spawn_above` - inputs larger than this many bytes are converted in a
       short-lived process with a pre-sized heap, which avoids most garbage
       collection. `:infinity` always converts in the calling process. Defaults to `256`.
+
+    * `:front_matter` - skip a leading front matter block: a first line of `---` or `+++`,
+      closed by a line with the same delimiter. The block is not rendered. An empty or
+      unterminated block is ordinary Markdown. Defaults to `false`.
 
     * `:safe` - safe output for untrusted input. Raw HTML is replaced by
       `<!-- raw HTML omitted -->`, and link and image destinations using the `javascript:`,
@@ -86,6 +91,7 @@ defmodule Erlmark do
   defp validate!({:spawn_above, n} = opt) when is_integer(n) and n >= 0, do: opt
   defp validate!({:breaks, b} = opt) when is_boolean(b), do: opt
   defp validate!({:safe, b} = opt) when is_boolean(b), do: opt
+  defp validate!({:front_matter, b} = opt) when is_boolean(b), do: opt
   defp validate!({:code_class_prefix, p} = opt) when is_binary(p), do: opt
   defp validate!({:parallel, p} = opt) when p in [false, :auto], do: opt
   defp validate!({:parallel, n} = opt) when is_integer(n) and n >= 1, do: opt
@@ -102,12 +108,20 @@ defmodule Erlmark do
   end
 
   defp validate!({key, value})
-       when key in [:spawn_above, :parallel, :extensions, :breaks, :safe, :code_class_prefix] do
+       when key in [
+              :spawn_above,
+              :parallel,
+              :extensions,
+              :breaks,
+              :safe,
+              :front_matter,
+              :code_class_prefix
+            ] do
     raise ArgumentError, "invalid value #{inspect(value)} for option #{inspect(key)}"
   end
 
   defp validate!(other) do
     raise ArgumentError,
-          "unknown option #{inspect(other)}, expected a keyword list with :spawn_above, :parallel, :extensions, :breaks, :safe or :code_class_prefix"
+          "unknown option #{inspect(other)}, expected a keyword list with :spawn_above, :parallel, :extensions, :breaks, :safe, :front_matter or :code_class_prefix"
   end
 end

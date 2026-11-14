@@ -30,6 +30,7 @@ pub opaque type Options {
     breaks: Bool,
     code_class_prefix: Option(String),
     safe: Bool,
+    front_matter: Bool,
   )
 }
 
@@ -69,7 +70,15 @@ pub fn new() -> Options {
     breaks: False,
     code_class_prefix: None,
     safe: False,
+    front_matter: False,
   )
+}
+
+/// Skip a leading front matter block: a first line of `---` or `+++`, closed by a line
+/// with the same delimiter. The block is not rendered. An empty or unterminated block is
+/// ordinary Markdown.
+pub fn front_matter(options: Options) -> Options {
+  Options(..options, front_matter: True)
 }
 
 /// Safe output for untrusted input. Raw HTML is replaced by `<!-- raw HTML omitted -->`,
@@ -153,6 +162,7 @@ pub fn to_html_with(markdown: String, options: Options) -> String {
     options.breaks,
     options.code_class_prefix,
     options.safe,
+    options.front_matter,
   )
 }
 
@@ -165,4 +175,5 @@ fn convert(
   breaks: Bool,
   code_class_prefix: Option(String),
   safe: Bool,
+  front_matter: Bool,
 ) -> String

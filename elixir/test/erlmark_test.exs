@@ -45,6 +45,12 @@ defmodule ErlmarkTest do
     assert_raise ArgumentError, fn -> Erlmark.to_html("x", safe: 1) end
   end
 
+  test "front matter" do
+    assert Erlmark.to_html("---\ntitle: x\n---\n# Hi", front_matter: true) == "<h1>Hi</h1>\n"
+    assert Erlmark.to_html("---\ntitle: x\n---\n# Hi") =~ "<hr />"
+    assert_raise ArgumentError, fn -> Erlmark.to_html("x", front_matter: :yes) end
+  end
+
   test "rejects invalid options" do
     assert_raise ArgumentError, ~r/unknown option/, fn -> Erlmark.to_html("x", bogus: 1) end
 
