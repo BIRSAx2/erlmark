@@ -89,10 +89,14 @@ fl(O, S, L, A) -> [part(O, S, L) | A].
 %% URL encoding (href / src)
 %%--------------------------------------------------------------------
 
+-define(IS_HEX(C),
+    ((C >= $0 andalso C =< $9) orelse (C >= $a andalso C =< $f) orelse (C >= $A andalso C =< $F))
+).
+
 -define(URL_SAFE(C),
     (?IS_ALNUM(C) orelse C =:= $- orelse C =:= $_ orelse C =:= $. orelse C =:= $+ orelse
         C =:= $! orelse C =:= $* orelse C =:= $( orelse C =:= $) orelse C =:= $, orelse
-        C =:= $% orelse C =:= $# orelse C =:= $@ orelse C =:= $? orelse C =:= $= orelse
+        C =:= $# orelse C =:= $@ orelse C =:= $? orelse C =:= $= orelse
         C =:= $; orelse C =:= $: orelse C =:= $/ orelse C =:= $$ orelse C =:= $~)
 ).
 
@@ -105,7 +109,7 @@ fl(O, S, L, A) -> [part(O, S, L) | A].
 -define(URL_TAB,
     {false, false, false, false, false, false, false, false, false, false, false, false, false,
         false, false, false, false, false, false, false, false, false, false, false, false, false,
-        false, false, false, false, false, false, false, true, false, true, true, true, false,
+        false, false, false, false, false, false, false, true, false, true, true, false, false,
         false, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
         true, true, true, true, true, true, false, true, false, true, true, true, true, true, true,
         true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
@@ -137,6 +141,7 @@ url(<<A1, B1, C1, D1, R/binary>>, O, S, L, A) when
     element(D1 + 1, ?URL_TAB)
 ->
     url(R, O, S, L + 4, A);
+url(<<$%, H1, H2, R/binary>>, O, S, L, A) when ?IS_HEX(H1), ?IS_HEX(H2) -> url(R, O, S, L + 3, A);
 url(<<C, R/binary>>, O, S, L, A) when ?URL_SAFE(C) -> url(R, O, S, L + 1, A);
 url(<<$&, R/binary>>, O, S, L, A) ->
     url(R, O, S + L + 1, 0, [<<"&amp;">> | fl(O, S, L, A)]);
