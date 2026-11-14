@@ -9,6 +9,7 @@
 -define(ESC_OK(X), (X > 62 orelse X < 34 orelse (X > 38 andalso X < 60))).
 
 -export([
+    flag/1,
     could_autolink/1,
     esc/1,
     url/1,
@@ -446,6 +447,14 @@ property_re(Kind) ->
             Re
     end.
 -endif.
+
+%% The value of a conversion option set by erlmark:to_html/2, or `false'.
+-spec flag(atom()) -> term().
+flag(Key) ->
+    case get(erlmark_flags) of
+        undefined -> false;
+        Flags -> proplists:get_value(Key, Flags, false)
+    end.
 
 -spec ltrim(binary()) -> binary().
 ltrim(<<C, R/binary>>) when ?IS_SP(C) -> ltrim(R);

@@ -862,3 +862,55 @@ percent_in_destination_test_() ->
         ?_assertEqual(<<"<p><a href=\"%25zz\">a</a></p>\n">>, html(<<"[a](%zz)">>)),
         ?_assertEqual(<<"<p><a href=\"foo%20b\">a</a></p>\n">>, html(<<"[a](foo%20b)">>))
     ].
+
+breaks_option_test_() ->
+    B = fun(Md) -> erlmark:to_html(Md, [{breaks, true}]) end,
+    [
+        ?_assertEqual(<<"<p>a<br />\nb</p>\n">>, B(<<"a\nb">>)),
+        ?_assertEqual(<<"<p>a<br />\nb<br />\nc</p>\n">>, B(<<"a\nb\nc">>)),
+        %% a hard break is not doubled, a trailing newline adds nothing
+        ?_assertEqual(<<"<p>a<br />\nb<br />\nc</p>\n">>, B(<<"a  \nb\nc">>)),
+        ?_assertEqual(<<"<p>a</p>\n">>, B(<<"a\n">>)),
+        %% line endings inside a code span are spaces, not breaks
+        ?_assertEqual(<<"<p><code>a b</code></p>\n">>, B(<<"`a\nb`">>)),
+        ?_assertEqual(<<"<p>a<br />\nb</p>\n">>, B(<<"a\r\nb">>)),
+        %% off by default and when set to false
+        ?_assertEqual(<<"<p>a\nb</p>\n">>, html(<<"a\nb">>)),
+        ?_assertEqual(<<"<p>a\nb</p>\n">>, erlmark:to_html(<<"a\nb">>, [{breaks, false}]))
+    ].
+
+code_class_prefix_option_test_() ->
+    P = fun(Md, Prefix) -> erlmark:to_html(Md, [{code_class_prefix, Prefix}]) end,
+    [
+        ?_assertEqual(
+            <<"<pre><code class=\"lang-erl\">x\n</code></pre>\n">>,
+            P(<<"```erl\nx\n```">>, <<"lang-">>)
+        ),
+        ?_assertEqual(
+            <<"<pre><code class=\"erl\">x\n</code></pre>\n">>, P(<<"```erl\nx\n```">>, <<>>)
+        ),
+        ?_assertEqual(
+            <<"<pre><code class=\"a&quot;b&lt;c\">x\n</code></pre>\n">>,
+            P(<<"```c\nx\n```">>, "a\"b<")
+        ),
+        %% no info string: no class
+        ?_assertEqual(<<"<pre><code>x\n</code></pre>\n">>, P(<<"```\nx\n```">>, <<"p-">>)),
+        ?_assertEqual(
+            <<"<pre><code class=\"language-erl\">x\n</code></pre>\n">>, html(<<"```erl\nx\n```">>)
+        )
+    ].
+
+%% The render flags reach every worker process: parallel and sequential output match.
+flags_reach_parallel_workers_test() ->
+    Md = binary:copy(
+        <<"# Title\n\nline one\nline two\n\n```erl\ncode\n```\n\n">>, 3000
+    ),
+    Opts = [{breaks, true}, {code_class_prefix, <<"x-">>}],
+    Sequential = erlmark:to_html(Md, Opts),
+    ?assertEqual(Sequential, erlmark:to_html(Md, [{parallel, 4} | Opts])),
+    ?assertEqual(Sequential, erlmark:to_html(Md, [{spawn_above, infinity} | Opts])),
+    ?assertMatch({_, _}, binary:match(Sequential, <<"line one<br />\nline two">>)),
+    ?assertMatch({_, _}, binary:match(Sequential, <<"class=\"x-erl\"">>)),
+    %% flags do not leak into the next conversion in the same process
+    ?assertEqual(<<"<p>a\nb</p>\n">>, html(<<"a\nb">>)),
+    ?assertEqual(undefined, get(erlmark_flags)).

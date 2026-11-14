@@ -143,9 +143,20 @@ newline(Text, Rest, Stack, Rf) ->
     Br =
         case Hard of
             true -> <<"<br />\n">>;
-            false -> <<"\n">>
+            false -> soft_break()
         end,
     scan(Rest, $\s, [Br | St1], Rf).
+
+soft_break() ->
+    case get(erlmark_flags) of
+        undefined ->
+            <<"\n">>;
+        _ ->
+            case erlmark_util:flag(breaks) of
+                true -> <<"<br />\n">>;
+                false -> <<"\n">>
+            end
+    end.
 
 rtrim_spaces(<<>> = B) ->
     B;

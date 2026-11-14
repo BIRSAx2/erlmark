@@ -21,7 +21,9 @@
 -type option() ::
     {spawn_above, non_neg_integer() | infinity}
     | {parallel, false | auto | pos_integer()}
-    | {extensions, [autolink | tagfilter]}.
+    | {extensions, [autolink | tagfilter]}
+    | {breaks, boolean()}
+    | {code_class_prefix, iodata()}.
 %% Conversion options:
 %% <dl>
 %% <dt>`{spawn_above, Bytes | infinity}'</dt>
@@ -37,6 +39,12 @@
 %% URLs and e-mail addresses into links. `tagfilter' escapes `&lt;script&gt;',
 %% `&lt;style&gt;' and similar tags. Conversion with extensions is always
 %% sequential. Default: none.</dd>
+%% <dt>`{breaks, boolean()}'</dt>
+%% <dd>Render a line break inside a paragraph as `&lt;br /&gt;', as chat and comment
+%% systems expect. Default: `false'.</dd>
+%% <dt>`{code_class_prefix, iodata()}'</dt>
+%% <dd>Prefix of the class on fenced code blocks that have an info string. Default:
+%% `<<"language-">>'.</dd>
 %% </dl>
 
 -define(DEFAULT_SPAWN_ABOVE, 256).
@@ -67,10 +75,42 @@ to_html(Markdown, []) ->
         false -> convert(Bin)
     end;
 to_html(Markdown, Opts) ->
-    case proplists:get_value(extensions, Opts, []) of
-        [] -> to_html_plain(iolist_to_binary(Markdown), Opts);
-        Exts -> convert_ext(iolist_to_binary(Markdown), Exts)
+    Bin = iolist_to_binary(Markdown),
+    Flags = render_flags(Opts),
+    with_flags(Flags, fun() ->
+        case proplists:get_value(extensions, Opts, []) of
+            [] -> to_html_plain(Bin, Opts);
+            Exts -> convert_ext(Bin, Exts)
+        end
+    end).
+
+%% The options that change rendering, kept in the process dictionary for the duration
+%% of one conversion and copied into worker processes. Read through erlmark_util:flag/1.
+render_flags(Opts) ->
+    lists:append([flag(K, V) || {K, V} <- Opts]).
+
+flag(breaks, true) -> [{breaks, true}];
+flag(code_class_prefix, P) -> [{code_class_prefix, iolist_to_binary(P)}];
+flag(_, _) -> [].
+
+with_flags([], Fun) ->
+    Fun();
+with_flags(Flags, Fun) ->
+    Old = put(erlmark_flags, Flags),
+    try
+        Fun()
+    after
+        case Old of
+            undefined -> erase(erlmark_flags);
+            _ -> put(erlmark_flags, Old)
+        end
     end.
+
+restore_flags(undefined) ->
+    ok;
+restore_flags(Flags) ->
+    put(erlmark_flags, Flags),
+    ok.
 
 to_html_plain(Bin, Opts) ->
     Limit = proplists:get_value(spawn_above, Opts, ?DEFAULT_SPAWN_ABOVE),
@@ -113,8 +153,12 @@ convert_parallel(Chunks, Whole) ->
 spawn_chunk(Self, Chunk) ->
     Ref = make_ref(),
     Heap = min(?MAX_HEAP_WORDS, byte_size(Chunk) * ?HEAP_WORDS_PER_BYTE),
+    Flags = get(erlmark_flags),
     {Pid, Mon} = spawn_opt(
-        fun() -> Self ! {Ref, safe(fun() -> convert_chunk(Chunk) end)} end,
+        fun() ->
+            restore_flags(Flags),
+            Self ! {Ref, safe(fun() -> convert_chunk(Chunk) end)}
+        end,
         [monitor, {min_heap_size, Heap}]
     ),
     {Ref, Pid, Mon}.
@@ -224,8 +268,12 @@ run_in_worker(Job, Bin) ->
     Self = self(),
     Ref = make_ref(),
     Heap = min(?MAX_HEAP_WORDS, byte_size(Bin) * ?HEAP_WORDS_PER_BYTE),
+    Flags = get(erlmark_flags),
     {Pid, Mon} = spawn_opt(
-        fun() -> Self ! {Ref, safe(Job)} end,
+        fun() ->
+            restore_flags(Flags),
+            Self ! {Ref, safe(Job)}
+        end,
         [monitor, {min_heap_size, Heap}]
     ),
     await({Ref, Pid, Mon}).
@@ -236,6 +284,12 @@ run_in_worker(Job, Bin) ->
 
 blocks(Blocks, Refs) -> [block(B, Refs) || B <- Blocks].
 
+code_class_prefix() ->
+    case erlmark_util:flag(code_class_prefix) of
+        false -> <<"language-">>;
+        Prefix -> erlmark_util:esc(Prefix)
+    end.
+
 block({paragraph, Src}, Refs) ->
     [<<"<p>">>, erlmark_inline:render(Src, Refs), <<"</p>\n">>];
 block({heading, Level, Src}, Refs) ->
@@ -244,13 +298,25 @@ block({heading, Level, Src}, Refs) ->
 block({code, <<>>, Content}, _Refs) ->
     [<<"<pre><code>">>, erlmark_util:esc(Content), <<"</code></pre>\n">>];
 block({code, Info, Content}, _Refs) ->
-    [
-        <<"<pre><code class=\"language-">>,
-        erlmark_util:esc(Info),
-        <<"\">">>,
-        erlmark_util:esc(Content),
-        <<"</code></pre>\n">>
-    ];
+    case get(erlmark_flags) of
+        undefined ->
+            [
+                <<"<pre><code class=\"language-">>,
+                erlmark_util:esc(Info),
+                <<"\">">>,
+                erlmark_util:esc(Content),
+                <<"</code></pre>\n">>
+            ];
+        _ ->
+            [
+                <<"<pre><code class=\"">>,
+                code_class_prefix(),
+                erlmark_util:esc(Info),
+                <<"\">">>,
+                erlmark_util:esc(Content),
+                <<"</code></pre>\n">>
+            ]
+    end;
 block({blockquote, Blocks}, Refs) ->
     case Blocks of
         [] -> <<"<blockquote>\n</blockquote>\n">>;
