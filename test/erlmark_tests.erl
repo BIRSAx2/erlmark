@@ -1327,3 +1327,36 @@ footnotes_test_() ->
         %% the numbering does not leak into the next conversion
         ?_assertEqual(F(<<"a[^1]\n\n[^1]: n">>), F(<<"a[^1]\n\n[^1]: n">>))
     ].
+
+%% A tab after a nested container marker reaches the next tab stop of the original line,
+%% not of the line with the outer prefix removed. Expected output as in comrak.
+tab_after_nested_marker_test_() ->
+    Code = fun(Text) -> iolist_to_binary(["<pre><code>", Text, "\n</code></pre>\n"]) end,
+    Quote = fun(Inner) -> iolist_to_binary(["<blockquote>\n", Inner, "</blockquote>\n"]) end,
+    [
+        %% `>` at column 2, a tab to column 4 (the optional space), another tab to column 8
+        ?_assertEqual(Quote(Quote(Code(<<"o">>))), html(<<"> >\t\to">>)),
+        ?_assertEqual(html(<<"> >     o">>), html(<<"> >\t\to">>)),
+        %% a list marker after a quote marker, and the other way round
+        ?_assertEqual(
+            Quote(<<"<ol>\n<li>\n", (Code(<<"o">>))/binary, "</li>\n</ol>\n">>), html(<<">1. \to">>)
+        ),
+        ?_assertEqual(
+            <<"<ul>\n<li>\n<blockquote>\n", (Code(<<"x">>))/binary,
+                "</blockquote>\n</li>\n</ul>\n">>,
+            html(<<"- > \tx">>)
+        ),
+        %% nested list on the continuation line of an item
+        ?_assertEqual(
+            <<"<ul>\n<li>\n<ul>\n<li>\n<pre><code>&quot;\n</code></pre>\n</li>\n</ul>\n</li>\n</ul>\n">>,
+            html(<<"-\n  - \t\"">>)
+        ),
+        %% a tab that lands before the content column is just a separator
+        ?_assertEqual(html(<<"- a\n  - b">>), html(<<"- a\n  -\tb">>)),
+        %% tabs in text and in fenced code are left alone
+        ?_assertEqual(<<"<p>a\tb</p>\n">>, html(<<"a\tb">>)),
+        ?_assertEqual(
+            <<"<blockquote>\n<pre><code>a\tb\n</code></pre>\n</blockquote>\n">>,
+            html(<<"> ```\n> a\tb\n> ```">>)
+        )
+    ].

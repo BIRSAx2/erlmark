@@ -4,6 +4,11 @@
 -module(erlmark_block).
 -include("erlmark.hrl").
 -compile({inline, [part/3]}).
+-compile(
+    {no_inline, [
+        struct_tabs/2, expand_struct/2, expand_after_marker/2, struct_marker/1, quote_strip_slow/1
+    ]}
+).
 
 -export([parse/1]).
 
@@ -566,38 +571,48 @@ strip_upto(L, _) -> L.
 %% malicious input of a few MB could take minutes); real documents nest ~6 levels.
 quote(Lines, Refs, D) when D >= ?MAX_DEPTH -> paragraph(Lines, Refs);
 quote(Lines, Refs, D) ->
-    {QLines, Rest} = quote_lines(Lines, [], false),
+    {QLines, Rest} = quote_lines(Lines, [], false, no_tabs()),
     {Blocks, _Gap, Refs2} = blocks(QLines, Refs, D + 1),
     {{blockquote, Blocks}, Rest, Refs2, false}.
 
 %% InPara: is the last collected inner line part of an open paragraph?
-quote_lines([], Acc, _) ->
+quote_lines([], Acc, _, _) ->
     {lists:reverse(Acc), []};
-quote_lines([L | Rest] = Lines, Acc, InPara) ->
-    case quote_strip(L) of
+quote_lines([L | Rest] = Lines, Acc, InPara, NoTabs) ->
+    case quote_strip(L, NoTabs) of
         {ok, In} ->
-            quote_lines(Rest, [In | Acc], block_state(InPara, In));
+            quote_lines(Rest, [In | Acc], block_state(InPara, In), NoTabs);
         none ->
             case InPara =:= true andalso lazy_line(L) of
-                true -> quote_lines(Rest, [lazy_escape(L) | Acc], true);
+                true -> quote_lines(Rest, [lazy_escape(L) | Acc], true, NoTabs);
                 false -> {lists:reverse(Acc), Lines}
             end
     end.
 
-%% `> ` followed by a blank or tab may hide a tab that must be expanded against its column: slow path.
-quote_strip(<<$>, $\s, C, _/binary>> = L) when C =:= $\s; C =:= $\t -> quote_strip_slow(L);
-quote_strip(<<$>, $\s, R/binary>>) -> {ok, R};
-quote_strip(L) -> quote_strip_slow(L).
+%% `> ` followed by a blank or tab may hide a tab that must be expanded against its column:
+%% slow path. In a document with tabs, so may a nested container marker after `> `, because
+%% a tab after it depends on the column in the original line.
+quote_strip(<<$>, $\s, C, _/binary>> = L, NT) when C =:= $\s; C =:= $\t -> quote_strip_slow(L, NT);
+quote_strip(<<$>, $\s, R/binary>>, true) ->
+    {ok, R};
+quote_strip(<<$>, $\s, C, _/binary>> = L, false) when
+    C =:= $>; C =:= $-; C =:= $*; C =:= $+; C >= $0, C =< $9
+->
+    quote_strip_slow(L, false);
+quote_strip(<<$>, $\s, R/binary>>, false) ->
+    {ok, R};
+quote_strip(L, NT) ->
+    quote_strip_slow(L, NT).
 
-quote_strip_slow(L) ->
+quote_strip_slow(L, NoTabs) ->
     case indent(L) of
         {N, <<$>, R/binary>>} when N < 4 ->
             case R of
                 %% the optional space, then blanks that may include a tab: expand them against
                 %% their real column (N + 2) so that `> \t*` means the same as `>   *`
-                <<$\s, R2/binary>> -> {ok, expand_from(R2, N + 2)};
-                <<$\t, _/binary>> -> {ok, tab_after_marker(R, N + 1)};
-                _ -> {ok, R}
+                <<$\s, R2/binary>> -> {ok, nested_tabs(expand_from(R2, N + 2), N + 2, NoTabs)};
+                <<$\t, _/binary>> -> {ok, nested_tabs(tab_after_marker(R, N + 1), N + 2, NoTabs)};
+                _ -> {ok, nested_tabs(R, N + 1, NoTabs)}
             end;
         _ ->
             none
@@ -1256,8 +1271,15 @@ item_start(N, MLen, After) ->
 
 item_lines(Lines, W, First) ->
     case no_tabs() of
-        true -> item_fast(Lines, W, [First], 0);
-        false -> item_lines(Lines, W, [First], 0)
+        true ->
+            item_fast(Lines, W, [First], 0);
+        false ->
+            First1 =
+                case First of
+                    <<C, _/binary>> when ?IS_LETTER(C); C >= 128 -> First;
+                    _ -> expand_struct(First, W)
+                end,
+            item_lines(Lines, W, [First1], 0)
     end.
 
 %% Does the document being parsed contain no tab at all? (Computed on first use, then cached.)
@@ -1362,10 +1384,10 @@ item_lines([L | Rest] = Lines, W, Acc, Blanks) ->
                 _ -> item_lines(Rest, W, Acc, Blanks + 1)
             end;
         {N, _} when N >= W, Blanks =:= 0 ->
-            item_lines(Rest, W, [strip_cols(L, W) | Acc], 0);
+            item_lines(Rest, W, [struct_tabs(strip_cols(L, W), W) | Acc], 0);
         {N, _} when N >= W ->
             Acc1 = lists:duplicate(Blanks, <<>>) ++ Acc,
-            item_lines(Rest, W, [strip_cols(L, W) | Acc1], 0);
+            item_lines(Rest, W, [struct_tabs(strip_cols(L, W), W) | Acc1], 0);
         {N, T} ->
             case Blanks =:= 0 andalso lazy_item(Acc, N, T, L) of
                 true -> item_lines_lazy(Rest, W, [lazy_escape(L) | Acc]);
@@ -1708,3 +1730,92 @@ join_html(Lines) -> iolist_to_binary(lists:join(<<"\n">>, Lines)).
 part(B, S, L) ->
     <<_:S/binary, R:L/binary, _/binary>> = B,
     R.
+
+%%--------------------------------------------------------------------
+%% Tabs after nested container markers
+%%--------------------------------------------------------------------
+
+%% R starts at column Col of the original line. When its leading blanks are followed by
+%% nested container markers (`>`, a bullet or an ordered list marker), expand every tab in
+%% those blanks and in the blanks after the markers against their real columns. A
+%% container parsed later from R then sees the columns of the original line, which the
+%% stripped prefix would otherwise hide. R is returned unchanged when no marker follows.
+%% A line that starts with a letter or a non-ASCII byte has no blanks or markers to expand.
+expand_struct(<<C, _/binary>> = R, _Col) when ?IS_LETTER(C); C >= 128 ->
+    R;
+expand_struct(<<>> = R, _Col) ->
+    R;
+expand_struct(R, Col) ->
+    case binary:match(R, <<"\t">>) of
+        nomatch ->
+            R;
+        _ ->
+            {End, After} = lead(R, Col),
+            %% four blanks or more make indented code, not nested containers
+            case End - Col < 4 andalso struct_marker(After) of
+                {ok, Marker, Rest} ->
+                    <<
+                        (spaces(End - Col))/binary,
+                        Marker/binary,
+                        (expand_after_marker(Rest, End + byte_size(Marker)))/binary
+                    >>;
+                _ ->
+                    R
+            end
+    end.
+
+expand_after_marker(R, Col) ->
+    {End, After} = lead(R, Col),
+    case struct_marker(After) of
+        {ok, Marker, Rest} ->
+            <<
+                (spaces(End - Col))/binary,
+                Marker/binary,
+                (expand_after_marker(Rest, End + byte_size(Marker)))/binary
+            >>;
+        none ->
+            <<(spaces(End - Col))/binary, After/binary>>
+    end.
+
+%% A container marker at the start of B: `>`, a bullet or an ordered marker followed by a
+%% blank or the end of the line.
+struct_marker(<<$>, R/binary>>) ->
+    {ok, <<$>>>, R};
+struct_marker(<<M, R/binary>>) when M =:= $-; M =:= $*; M =:= $+ ->
+    case blank_or_end(R) of
+        true -> {ok, <<M>>, R};
+        false -> none
+    end;
+struct_marker(<<D, _/binary>> = B) when D >= $0, D =< $9 ->
+    N = digit_run(B, 0),
+    case N =< 9 of
+        true ->
+            <<Digits:N/binary, T/binary>> = B,
+            case T of
+                <<E, R/binary>> when E =:= $.; E =:= $) ->
+                    case blank_or_end(R) of
+                        true -> {ok, <<Digits/binary, E>>, R};
+                        false -> none
+                    end;
+                _ ->
+                    none
+            end;
+        false ->
+            none
+    end;
+struct_marker(_) ->
+    none.
+
+blank_or_end(<<>>) -> true;
+blank_or_end(<<C, _/binary>>) -> C =:= $\s orelse C =:= $\t.
+
+nested_tabs(R, _Col, true) -> R;
+nested_tabs(R, Col, false) -> expand_struct(R, Col).
+
+%% The content of a list item or its continuation line, starting at column Col: see
+%% expand_struct/2. Tab-free documents have nothing to expand.
+struct_tabs(R, Col) ->
+    case no_tabs() of
+        true -> R;
+        false -> expand_struct(R, Col)
+    end.
