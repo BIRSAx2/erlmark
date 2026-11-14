@@ -397,24 +397,50 @@ first_cp(<<_, _/binary>>) -> 16#FFFD;
 first_cp(<<>>) -> $\s.
 
 %% Unicode whitespace (category Zs) and punctuation (categories P* and S*).
+%% unicode_util:category/1 exists from OTP 29; older releases use PCRE's Unicode
+%% properties, with the compiled patterns cached in persistent_term.
+-if(?OTP_RELEASE >= 29).
 -spec unicode_ws(non_neg_integer()) -> boolean().
 unicode_ws(CP) ->
-    try unicode_util:category(CP) of
+    case unicode_util:category(CP) of
         {separator, space} -> true;
         _ -> false
-    catch
-        _:_ -> false
     end.
 
 -spec unicode_punct(non_neg_integer()) -> boolean().
 unicode_punct(CP) ->
-    try unicode_util:category(CP) of
+    case unicode_util:category(CP) of
         {punctuation, _} -> true;
         {symbol, _} -> true;
         _ -> false
-    catch
-        _:_ -> false
     end.
+-else.
+-spec unicode_ws(non_neg_integer()) -> boolean().
+unicode_ws(CP) -> has_property(ws, CP).
+
+-spec unicode_punct(non_neg_integer()) -> boolean().
+unicode_punct(CP) -> has_property(punct, CP).
+
+has_property(Kind, CP) when CP >= 0, CP =< 16#10FFFF, not (CP >= 16#D800 andalso CP =< 16#DFFF) ->
+    re:run(<<CP/utf8>>, property_re(Kind), [{capture, none}]) =:= match;
+has_property(_, _) ->
+    false.
+
+property_re(Kind) ->
+    case persistent_term:get({?MODULE, Kind}, undefined) of
+        undefined ->
+            Src =
+                case Kind of
+                    ws -> <<"^\\p{Zs}$">>;
+                    punct -> <<"^[\\p{P}\\p{S}]$">>
+                end,
+            {ok, Re} = re:compile(Src, [unicode, ucp]),
+            persistent_term:put({?MODULE, Kind}, Re),
+            Re;
+        Re ->
+            Re
+    end.
+-endif.
 
 -spec ltrim(binary()) -> binary().
 ltrim(<<C, R/binary>>) when ?IS_SP(C) -> ltrim(R);
