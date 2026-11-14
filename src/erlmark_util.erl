@@ -10,6 +10,7 @@
 
 -export([
     flag/1,
+    unsafe_url/1,
     could_autolink/1,
     esc/1,
     url/1,
@@ -455,6 +456,32 @@ flag(Key) ->
         undefined -> false;
         Flags -> proplists:get_value(Key, Flags, false)
     end.
+
+%% Does a destination use a scheme that can run script or read local data? Browsers
+%% ignore leading control characters and spaces and any tab or line break inside the
+%% scheme, so those are skipped before comparing, ignoring case. `data:' is allowed for
+%% the common raster image formats only.
+-spec unsafe_url(binary()) -> boolean().
+unsafe_url(Url) ->
+    Head = binary:part(Url, 0, min(byte_size(Url), 64)),
+    Clean = <<<<(lower(C))>> || <<C>> <= skip_controls(Head), C =/= $\t, C =/= $\n, C =/= $\r>>,
+    case Clean of
+        <<"javascript:", _/binary>> -> true;
+        <<"vbscript:", _/binary>> -> true;
+        <<"file:", _/binary>> -> true;
+        <<"data:image/png", _/binary>> -> false;
+        <<"data:image/gif", _/binary>> -> false;
+        <<"data:image/jpeg", _/binary>> -> false;
+        <<"data:image/webp", _/binary>> -> false;
+        <<"data:", _/binary>> -> true;
+        _ -> false
+    end.
+
+skip_controls(<<C, R/binary>>) when C =< 32 -> skip_controls(R);
+skip_controls(B) -> B.
+
+lower(C) when C >= $A, C =< $Z -> C + 32;
+lower(C) -> C.
 
 -spec ltrim(binary()) -> binary().
 ltrim(<<C, R/binary>>) when ?IS_SP(C) -> ltrim(R);

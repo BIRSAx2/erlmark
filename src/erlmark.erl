@@ -23,6 +23,7 @@
     | {parallel, false | auto | pos_integer()}
     | {extensions, [autolink | tagfilter]}
     | {breaks, boolean()}
+    | {safe, boolean()}
     | {code_class_prefix, iodata()}.
 %% Conversion options:
 %% <dl>
@@ -39,6 +40,11 @@
 %% URLs and e-mail addresses into links. `tagfilter' escapes `&lt;script&gt;',
 %% `&lt;style&gt;' and similar tags. Conversion with extensions is always
 %% sequential. Default: none.</dd>
+%% <dt>`{safe, boolean()}'</dt>
+%% <dd>Safe output for untrusted input. Raw HTML blocks and inline raw HTML are replaced
+%% by `&lt;!-- raw HTML omitted --&gt;', and link and image destinations that use the
+%% `javascript:', `vbscript:', `file:' or `data:' schemes become empty (`data:' is kept
+%% for PNG, GIF, JPEG and WebP images). Default: `false'.</dd>
 %% <dt>`{breaks, boolean()}'</dt>
 %% <dd>Render a line break inside a paragraph as `&lt;br /&gt;', as chat and comment
 %% systems expect. Default: `false'.</dd>
@@ -90,6 +96,7 @@ render_flags(Opts) ->
     lists:append([flag(K, V) || {K, V} <- Opts]).
 
 flag(breaks, true) -> [{breaks, true}];
+flag(safe, true) -> [{safe, true}];
 flag(code_class_prefix, P) -> [{code_class_prefix, iolist_to_binary(P)}];
 flag(_, _) -> [].
 
@@ -325,7 +332,10 @@ block({blockquote, Blocks}, Refs) ->
 block(thematic, _Refs) ->
     <<"<hr />\n">>;
 block({html, Raw}, _Refs) ->
-    [Raw, $\n];
+    case erlmark_util:flag(safe) of
+        true -> <<"<!-- raw HTML omitted -->\n">>;
+        false -> [Raw, $\n]
+    end;
 block({list, Type, Tight, Items}, Refs) ->
     {Open, Close} =
         case Type of

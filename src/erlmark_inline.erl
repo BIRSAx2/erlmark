@@ -264,7 +264,7 @@ special($<, R, _P, St, Rf) ->
     of
         {ok, Text, Href, Rest} ->
             Node =
-                case erlmark_util:url(Href) of
+                case dest(Href) of
                     %% Unchanged by URL encoding: every byte is URL-safe, hence also
                     %% free of & < > ", so the text needs no escaping either.
                     U when is_binary(U) ->
@@ -277,10 +277,35 @@ special($<, R, _P, St, Rf) ->
             case erlmark_util:html_tag_len(R) of
                 {ok, L} ->
                     <<Tag:L/binary, Rest/binary>> = R,
-                    scan(Rest, $>, [[<<"<">>, Tag] | St], Rf);
+                    scan(Rest, $>, [raw_html(Tag) | St], Rf);
                 none ->
                     scan(R, $<, [<<"&lt;">> | St], Rf)
             end
+    end.
+
+%% Raw inline HTML, or the placeholder that replaces it in safe mode.
+raw_html(Tag) ->
+    case get(erlmark_flags) of
+        undefined ->
+            [<<"<">>, Tag];
+        _ ->
+            case erlmark_util:flag(safe) of
+                true -> <<"<!-- raw HTML omitted -->">>;
+                false -> [<<"<">>, Tag]
+            end
+    end.
+
+%% A link or image destination, empty in safe mode when its scheme is not safe.
+dest(Url) ->
+    case get(erlmark_flags) of
+        undefined -> erlmark_util:url(Url);
+        _ -> checked_dest(Url)
+    end.
+
+checked_dest(Url) ->
+    case erlmark_util:flag(safe) andalso erlmark_util:unsafe_url(Url) of
+        true -> <<>>;
+        false -> erlmark_util:url(Url)
     end.
 
 code_run(N, After, St, Rf) ->
@@ -449,7 +474,7 @@ close_bracket(R, St, {Refs, [{Img, LNOpen, ROpen} | BRest], LN}) ->
                 false ->
                     Node = [
                         <<"<a href=\"">>,
-                        erlmark_util:url(Url),
+                        dest(Url),
                         link_tail(Title),
                         Inner,
                         <<"</a>">>
@@ -463,7 +488,7 @@ close_bracket(R, St, {Refs, [{Img, LNOpen, ROpen} | BRest], LN}) ->
                         end,
                     Node = [
                         <<"<img src=\"">>,
-                        erlmark_util:url(Url),
+                        dest(Url),
                         <<"\" alt=\"">>,
                         Alt,
                         img_tail(Title)

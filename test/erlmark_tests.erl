@@ -914,3 +914,104 @@ flags_reach_parallel_workers_test() ->
     %% flags do not leak into the next conversion in the same process
     ?assertEqual(<<"<p>a\nb</p>\n">>, html(<<"a\nb">>)),
     ?assertEqual(undefined, get(erlmark_flags)).
+
+safe_mode_test_() ->
+    S = fun(Md) -> erlmark:to_html(Md, [{safe, true}]) end,
+    Omitted = <<"<!-- raw HTML omitted -->">>,
+    [
+        ?_assertEqual(<<Omitted/binary, "\n">>, S(<<"<script>alert(1)</script>">>)),
+        ?_assertEqual(
+            <<"<p>text ", Omitted/binary, "bold", Omitted/binary, "</p>\n">>,
+            S(<<"text <b>bold</b>">>)
+        ),
+        ?_assertEqual(<<Omitted/binary, "\n">>, S(<<"<div onclick=\"x()\">hi</div>">>)),
+        ?_assertEqual(<<"<p><a href=\"\">a</a></p>\n">>, S(<<"[a](javascript:alert(1))">>)),
+        ?_assertEqual(<<"<p><a href=\"\">a</a></p>\n">>, S(<<"[a](JaVaScRiPt:alert(1))">>)),
+        ?_assertEqual(<<"<p><a href=\"\">a</a></p>\n">>, S(<<"[a](  javascript:alert(1))">>)),
+        %% a destination decoded from a character reference
+        ?_assertEqual(<<"<p><a href=\"\">a</a></p>\n">>, S(<<"[a](&#106;avascript:alert(1))">>)),
+        ?_assertEqual(<<"<p><a href=\"\">a</a></p>\n">>, S(<<"[a](vbscript:x)">>)),
+        ?_assertEqual(<<"<p><a href=\"\">a</a></p>\n">>, S(<<"[a](file:///etc/passwd)">>)),
+        ?_assertEqual(
+            <<"<p><a href=\"\">a</a></p>\n">>, S(<<"[a](data:text/html;base64,PHNjcmlwdD4=)">>)
+        ),
+        ?_assertEqual(
+            <<"<p><a href=\"data:image/png;base64,AAAA\">a</a></p>\n">>,
+            S(<<"[a](data:image/png;base64,AAAA)">>)
+        ),
+        ?_assertEqual(
+            <<"<p><img src=\"\" alt=\"i\" /></p>\n">>, S(<<"![i](javascript:alert(1))">>)
+        ),
+        %% an autolink and a reference definition use the same check
+        ?_assertEqual(
+            <<"<p><a href=\"\">javascript:alert(1)</a></p>\n">>, S(<<"<javascript:alert(1)>">>)
+        ),
+        ?_assertEqual(
+            <<"<p><a href=\"\">ref</a></p>\n">>, S(<<"[ref]\n\n[ref]: javascript:alert(1)">>)
+        ),
+        %% safe URLs and code are untouched
+        ?_assertEqual(
+            <<"<p><a href=\"https://example.com\">a</a></p>\n">>, S(<<"[a](https://example.com)">>)
+        ),
+        ?_assertEqual(<<"<p><code>&lt;script&gt;</code></p>\n">>, S(<<"`<script>`">>)),
+        ?_assertEqual(
+            <<"<pre><code>&lt;script&gt;x&lt;/script&gt;\n</code></pre>\n">>,
+            S(<<"```\n<script>x</script>\n```">>)
+        ),
+        %% default conversion still passes raw HTML through
+        ?_assertEqual(<<"<script>alert(1)</script>\n">>, html(<<"<script>alert(1)</script>">>))
+    ].
+
+%% With safe mode on, no generated link or image can use an active scheme and no raw
+%% HTML survives, whatever the input.
+safe_mode_fuzz_test_() ->
+    {timeout, 60, fun() ->
+        Toks = [
+            <<"<script>">>,
+            <<"</script>">>,
+            <<"<img src=x onerror=alert(1)>">>,
+            <<"<a href=\"javascript:x\">">>,
+            <<"[a](">>,
+            <<"javascript:">>,
+            <<"JAVASCRIPT:">>,
+            <<"&#106;avascript:">>,
+            <<"vbscript:">>,
+            <<"data:text/html,">>,
+            <<"file:///x">>,
+            <<")">>,
+            <<"]">>,
+            <<"[">>,
+            <<"!">>,
+            <<"<">>,
+            <<">">>,
+            <<"\n">>,
+            <<" ">>,
+            <<"\t">>,
+            <<"x">>,
+            <<"`">>,
+            <<"*">>,
+            <<"[r]: ">>,
+            <<"[r]">>,
+            <<"<div>">>,
+            <<"<!--">>,
+            <<"-->">>,
+            <<"<javascript:x>">>
+        ],
+        N = length(Toks),
+        rand:seed(exsss, {7, 8, 9}),
+        Bad = [
+            Md
+         || _ <- lists:seq(1, 4000),
+            Md <- [
+                iolist_to_binary([lists:nth(rand:uniform(N), Toks) || _ <- lists:seq(1, 14)])
+            ],
+            not safe_output(erlmark:to_html(Md, [{safe, true}]))
+        ],
+        ?assertEqual([], Bad)
+    end}.
+
+safe_output(Html) ->
+    NoCode = re:replace(Html, "<code>.*?</code>", "", [dotall, global, {return, binary}]),
+    re:run(NoCode, "<(script|iframe|style|img [^>]*on[a-z]+=)", [caseless]) =:= nomatch andalso
+        re:run(Html, "(href|src)=\"\\s*(javascript|vbscript|file|data:text)", [caseless]) =:=
+            nomatch.
