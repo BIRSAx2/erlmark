@@ -1,5 +1,9 @@
 # erlmark
 
+[![CI](https://github.com/BIRSAx2/erlmark/actions/workflows/ci.yml/badge.svg)](https://github.com/BIRSAx2/erlmark/actions/workflows/ci.yml)
+[![Hex.pm](https://img.shields.io/hexpm/v/erlmark.svg)](https://hex.pm/packages/erlmark)
+[![Docs](https://img.shields.io/badge/docs-hexdocs-purple.svg)](https://hexdocs.pm/erlmark)
+
 A pure Erlang Markdown to HTML converter. It has no NIFs, ports or dependencies,
 and needs nothing beyond Erlang/OTP.
 
