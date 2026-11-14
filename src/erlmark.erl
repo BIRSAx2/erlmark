@@ -1,10 +1,15 @@
-%% @doc Fast, pure Erlang CommonMark Markdown to HTML converter, with the GFM
-%% table, strikethrough and task-list extensions.
+%% @doc Fast, pure Erlang Markdown to HTML converter.
+%%
+%% Implements CommonMark 0.31.2 plus the GFM tables, strikethrough and task-list
+%% extensions. Extended autolinks and the tagfilter are opt-in.
 %%
 %% ```
 %% 1> erlmark:to_html(<<"# Hello *world*">>).
 %% <<"<h1>Hello <em>world</em></h1>\n">>
 %% '''
+%%
+%% Raw HTML in the input is passed through unchanged, as CommonMark requires.
+%% Sanitise the output if the input is untrusted.
 -module(erlmark).
 -include("erlmark.hrl").
 
@@ -17,15 +22,22 @@
     {spawn_above, non_neg_integer() | infinity}
     | {parallel, false | auto | pos_integer()}
     | {extensions, [autolink | tagfilter]}.
-%% `{extensions, [autolink, tagfilter]}': opt-in GFM extended autolinks (bare `www.',
-%% `http(s)://' and `ftp://' URLs, e-mail addresses) and the tagfilter (`<script>',
-%% `<style>' and similar tags are escaped). Off by default; always sequential.
-%% `{spawn_above, Bytes}': inputs larger than `Bytes' are converted in a short-lived
-%% helper process with a pre-sized heap, which avoids most garbage collection.
-%% `infinity' always converts in the caller. Default 256.
-%% `{parallel, auto | N}': split large documents at top-level block boundaries and
-%% convert the pieces on `N' schedulers. The output is identical to sequential
-%% conversion. Documents under 16 KB are never split.
+%% Conversion options:
+%% <dl>
+%% <dt>`{spawn_above, Bytes | infinity}'</dt>
+%% <dd>Inputs larger than `Bytes' are converted in a short-lived helper process with
+%% a pre-sized heap, which avoids most garbage collection. `infinity' always converts
+%% in the calling process. Default: 256.</dd>
+%% <dt>`{parallel, false | auto | N}'</dt>
+%% <dd>Split large documents at top-level block boundaries and convert the pieces on
+%% `N' schedulers (`auto' is all online ones). The output is identical to sequential
+%% conversion. Documents under 16 KB are never split. Default: `false'.</dd>
+%% <dt>`{extensions, [autolink | tagfilter]}'</dt>
+%% <dd>Opt-in GFM extensions. `autolink' turns bare `www.', `http(s)://' and `ftp://'
+%% URLs and e-mail addresses into links. `tagfilter' escapes `&lt;script&gt;',
+%% `&lt;style&gt;' and similar tags. Conversion with extensions is always
+%% sequential. Default: none.</dd>
+%% </dl>
 
 -define(DEFAULT_SPAWN_ABOVE, 256).
 -define(MIN_PARALLEL_CHUNK, 2048).
@@ -34,11 +46,19 @@
 -define(HEAP_WORDS_PER_BYTE, 16).
 -define(MAX_HEAP_WORDS, 4000000).
 
-%% @doc Convert Markdown to an HTML binary. Raw HTML in the input is passed
-%% through unchanged; sanitise the result if the input is untrusted.
+%% @doc Convert Markdown to an HTML binary, with default options.
+%% @equiv to_html(Markdown, [])
 -spec to_html(iodata()) -> binary().
 to_html(Markdown) -> to_html(Markdown, []).
 
+%% @doc Convert Markdown to an HTML binary.
+%% See {@type option()} for the available options. Errors raised while converting in a
+%% helper process are re-raised in the caller.
+%%
+%% ```
+%% 1> erlmark:to_html(<<"www.example.com">>, [{extensions, [autolink]}]).
+%% <<"<p><a href=\"http://www.example.com\">www.example.com</a></p>\n">>
+%% '''
 -spec to_html(iodata(), [option()]) -> binary().
 to_html(Markdown, []) ->
     Bin = iolist_to_binary(Markdown),

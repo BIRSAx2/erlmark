@@ -1,3 +1,4 @@
+%% @private
 %% @doc Opt-in GFM extensions that are not part of the default converter:
 %% extended autolinks and the tagfilter. Nothing here runs unless the caller passes
 %% `{extensions, [...]}' to `erlmark:to_html/2', so the default path pays nothing.

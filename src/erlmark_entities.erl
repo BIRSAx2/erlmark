@@ -3,7 +3,7 @@
 -module(erlmark_entities).
 -export([lookup/1]).
 
-%% @doc Decode a named character reference (without '&' and ';').
+%% Decode a named character reference (without '&' and ';').
 -spec lookup(binary()) -> binary() | error.
 lookup(Name) ->
     case entities() of
