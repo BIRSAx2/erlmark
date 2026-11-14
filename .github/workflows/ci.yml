@@ -21,7 +21,7 @@ jobs:
       matrix:
         otp: ["27", "28", "29"]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         with:
           otp-version: ${{ matrix.otp }}
@@ -41,7 +41,7 @@ jobs:
     name: Package versions in sync
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: |
           erl_vsn=$(sed -n 's/.*{vsn, "\(.*\)"}.*/\1/p' src/erlmark.app.src)
           ex_vsn=$(sed -n 's/^ *@version "\(.*\)"/\1/p' elixir/mix.exs)
