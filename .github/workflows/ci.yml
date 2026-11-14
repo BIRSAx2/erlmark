@@ -36,3 +36,16 @@ jobs:
       - run: rebar3 fmt --check
       - run: rebar3 eunit
       - run: rebar3 dialyzer
+
+  versions:
+    name: Package versions in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: |
+          erl_vsn=$(sed -n 's/.*{vsn, "\(.*\)"}.*/\1/p' src/erlmark.app.src)
+          ex_vsn=$(sed -n 's/^ *@version "\(.*\)"/\1/p' elixir/mix.exs)
+          gl_vsn=$(sed -n 's/^version = "\(.*\)"/\1/p' gleam/gleam.toml)
+          gl_dep=$(sed -n 's/^erlmark = "== \(.*\)"/\1/p' gleam/gleam.toml)
+          echo "erlmark=$erl_vsn erlmark_ex=$ex_vsn erlmark_gleam=$gl_vsn (depends on erlmark $gl_dep)"
+          test "$ex_vsn" = "$erl_vsn" && test "$gl_vsn" = "$erl_vsn" && test "$gl_dep" = "$erl_vsn"

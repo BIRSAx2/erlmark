@@ -36,6 +36,12 @@ jobs:
           elixir-version: ${{ matrix.elixir }}
           rebar3-version: "3"
       - run: mix deps.get
+        env:
+          ERLMARK_PATH: ..
       - run: mix format --check-formatted
       - run: mix compile --warnings-as-errors
+        env:
+          ERLMARK_PATH: ..
       - run: mix test
+        env:
+          ERLMARK_PATH: ..

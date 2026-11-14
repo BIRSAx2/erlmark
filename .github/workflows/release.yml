@@ -1,5 +1,6 @@
 name: Release
 
+# One v* tag releases erlmark, erlmark_ex and erlmark_gleam at the same version.
 on:
   push:
     tags: ["v*"]
@@ -14,34 +15,71 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         with:
-          otp-version: "29"
+          otp-version: "28"
+          elixir-version: "1.19"
+          gleam-version: "1.17.0"
           rebar3-version: "3"
-      - name: Tag matches the version in erlmark.app.src
+      - name: Tag matches the version of all three packages
         run: |
-          vsn=$(sed -n 's/.*{vsn, "\(.*\)"}.*/\1/p' src/erlmark.app.src)
-          test "v$vsn" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} != app vsn v$vsn"; exit 1; }
+          erl_vsn=$(sed -n 's/.*{vsn, "\(.*\)"}.*/\1/p' src/erlmark.app.src)
+          ex_vsn=$(sed -n 's/^ *@version "\(.*\)"/\1/p' elixir/mix.exs)
+          gl_vsn=$(sed -n 's/^version = "\(.*\)"/\1/p' gleam/gleam.toml)
+          echo "tag=${GITHUB_REF_NAME} erlmark=$erl_vsn erlmark_ex=$ex_vsn erlmark_gleam=$gl_vsn"
+          test "v$erl_vsn" = "${GITHUB_REF_NAME}" && test "$ex_vsn" = "$erl_vsn" && test "$gl_vsn" = "$erl_vsn" || { echo "versions out of sync"; exit 1; }
       - run: rebar3 fmt --check
       - run: rebar3 eunit
       - run: rebar3 dialyzer
       - run: rebar3 ex_doc
+      - name: Elixir package (against the sibling sources)
+        working-directory: elixir
+        env:
+          ERLMARK_PATH: ..
+        run: |
+          mix deps.get
+          mix format --check-formatted
+          mix compile --warnings-as-errors
+          mix test
+      - name: Gleam package (against the latest published erlmark)
+        working-directory: gleam
+        run: |
+          sed -i 's/^erlmark = .*/erlmark = ">= 0.1.1 and < 1.0.0"/' gleam.toml
+          gleam deps download
+          gleam format --check src test
+          gleam test
 
   publish:
     needs: verify
     runs-on: ubuntu-latest
-    # Holds HEX_API_KEY; add required reviewers to this environment in the repository settings.
+    # Holds HEX_API_KEY; the environment requires a reviewer to approve.
     environment: hex
     permissions:
       contents: write
+    env:
+      HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+      HEXPM_API_KEY: ${{ secrets.HEX_API_KEY }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         with:
-          otp-version: "29"
+          otp-version: "28"
+          elixir-version: "1.19"
+          gleam-version: "1.17.0"
           rebar3-version: "3"
-      - name: Publish to Hex
-        env:
-          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+      - name: Publish erlmark
         run: rebar3 hex publish --yes
+      # The wrappers depend on exactly this version, so wait until Hex serves it.
+      - name: Publish erlmark_ex
+        working-directory: elixir
+        run: |
+          for i in $(seq 1 30); do mix deps.get && ok=1 && break; sleep 10; done
+          test -n "$ok"
+          mix hex.publish --yes
+      - name: Publish erlmark_gleam
+        working-directory: gleam
+        run: |
+          for i in $(seq 1 30); do gleam deps download && ok=1 && break; sleep 10; done
+          test -n "$ok"
+          gleam publish --yes
       - name: GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

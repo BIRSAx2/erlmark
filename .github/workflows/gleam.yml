@@ -32,6 +32,9 @@ jobs:
           otp-version: ${{ matrix.otp }}
           gleam-version: "1.17.0"
           rebar3-version: "3"
+      # The committed requirement pins this repository's version, which is not on Hex until
+      # release; test against the latest published erlmark instead.
+      - run: sed -i 's/^erlmark = .*/erlmark = ">= 0.1.1 and < 1.0.0"/' gleam.toml
       - run: gleam deps download
       - run: gleam format --check src test
       - run: gleam test
