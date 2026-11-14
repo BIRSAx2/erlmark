@@ -153,7 +153,6 @@ rebar3 dialyzer
 `src/erlmark_entities.erl` is generated from the
 [WHATWG entity list](https://html.spec.whatwg.org/entities.json).
 
-Not yet published to Hex.
 
 ## License
 
