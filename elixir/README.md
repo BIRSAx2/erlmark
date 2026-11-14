@@ -28,8 +28,14 @@ Erlmark.to_html("# Hello *world*")
 Options are a keyword list:
 
 ```elixir
-# Opt-in GFM autolinks and the tagfilter.
-Erlmark.to_html("see www.example.com", extensions: [:autolink, :tagfilter])
+# Safe output for untrusted input: raw HTML and unsafe link schemes are removed.
+Erlmark.to_html(user_markdown, safe: true)
+
+# Opt-in GFM extensions.
+Erlmark.to_html(markdown, extensions: [:autolink, :tagfilter, :alerts, :footnotes])
+
+# GitHub-style heading ids, and a front matter block skipped.
+Erlmark.to_html(markdown, heading_ids: true, front_matter: true)
 
 # Convert a large document on all schedulers. The output is identical.
 Erlmark.to_html(big_markdown, parallel: :auto)
@@ -37,12 +43,18 @@ Erlmark.to_html(big_markdown, parallel: :auto)
 
 | Option | Default | Effect |
 |---|---|---|
-| `:extensions` | `[]` | `:autolink` links bare URLs and e-mail addresses; `:tagfilter` escapes `<script>`, `<style>` and similar tags. |
+| `:safe` | `false` | Replaces raw HTML with `<!-- raw HTML omitted -->` and empties `javascript:`, `vbscript:`, `file:` and non-image `data:` destinations. |
+| `:extensions` | `[]` | `:autolink` links bare URLs and e-mail addresses; `:tagfilter` escapes `<script>`, `<style>` and similar tags; `:alerts` renders `> [!NOTE]` style alerts; `:footnotes` adds `[^label]` references and definitions. |
+| `:heading_ids` | off | `true` or `{:prefix, "user-content-"}`: adds an `id` to each heading, as GitHub does. Forces sequential conversion. |
+| `:heading_anchors` | `false` | Also adds an `<a class="anchor">` link to each heading. |
+| `:front_matter` | `false` | Skips a leading `---` or `+++` block. |
+| `:breaks` | `false` | Renders a line break inside a paragraph as `<br />`. |
+| `:code_class_prefix` | `"language-"` | Prefix of the class on fenced code blocks that have an info string. |
 | `:parallel` | `false` | `:auto` or a scheduler count. Splits large documents (16 KB and up). |
 | `:spawn_above` | `256` | Inputs above this many bytes are converted in a short-lived process with a pre-sized heap. `:infinity` never spawns. |
 
-Raw HTML in the input is passed through unchanged, as CommonMark requires. Sanitise the
-output if the input is untrusted.
+Raw HTML in the input is passed through unchanged by default, as CommonMark requires. Use
+`safe: true` for untrusted input.
 
 ## Development
 

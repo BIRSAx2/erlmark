@@ -30,11 +30,20 @@ pub fn main() {
 Options are built with a pipeline:
 
 ```gleam
-"see www.example.com"
+// Safe output for untrusted input: raw HTML and unsafe link schemes are removed.
+user_markdown
+|> erlmark.to_html_with(erlmark.new() |> erlmark.safe)
+
+// Opt-in GFM extensions, heading ids and front matter.
+markdown
 |> erlmark.to_html_with(
   erlmark.new()
   |> erlmark.autolink
-  |> erlmark.tagfilter,
+  |> erlmark.tagfilter
+  |> erlmark.alerts
+  |> erlmark.footnotes
+  |> erlmark.heading_ids
+  |> erlmark.front_matter,
 )
 
 // Convert a large document on all schedulers. The output is identical.
@@ -44,13 +53,17 @@ big_markdown
 
 | Function | Effect |
 |---|---|
-| `autolink` | Links bare `www.`, `http(s)://` and `ftp://` URLs and e-mail addresses. |
-| `tagfilter` | Escapes `<script>`, `<style>` and similar tags. |
+| `safe` | Replaces raw HTML with `<!-- raw HTML omitted -->` and empties `javascript:`, `vbscript:`, `file:` and non-image `data:` destinations. |
+| `autolink`, `tagfilter`, `alerts`, `footnotes` | Opt-in extensions. |
+| `heading_ids`, `heading_ids_with_prefix`, `heading_anchors` | GitHub-style heading ids and anchor links. Force sequential conversion. |
+| `front_matter` | Skips a leading `---` or `+++` block. |
+| `breaks` | Renders a line break inside a paragraph as `<br />`. |
+| `code_class_prefix` | Prefix of the class on fenced code blocks that have an info string. |
 | `parallel` | `Sequential` (default), `Auto` or `Workers(n)`. Splits documents of 16 KB and up. |
 | `spawn_above` | `Bytes(n)` (default 256) or `Never`: when to use a helper process with a pre-sized heap. |
 
-Raw HTML in the input is passed through unchanged, as CommonMark requires. Sanitise the
-output if the input is untrusted.
+Raw HTML in the input is passed through unchanged by default, as CommonMark requires. Use
+`safe` for untrusted input.
 
 Further documentation is at <https://hexdocs.pm/erlmark_gleam>.
 
