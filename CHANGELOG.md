@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `{safe, true}`: raw HTML is replaced by `<!-- raw HTML omitted -->` and link and image
+  destinations using `javascript:`, `vbscript:`, `file:` or `data:` (other than common
+  image types) become empty.
+- `{extensions, [alerts]}`: GFM alerts (`> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`,
+  `[!CAUTION]`), with an optional custom title.
+- `{extensions, [footnotes]}`: footnote references and definitions, numbered by first use,
+  with a footnotes section and back links.
+- `{heading_ids, true | {prefix, P}}` and `{heading_anchors, true}`: GitHub-style heading
+  ids with numbering of repeated headings, and optional anchor links.
+- `{front_matter, true}`: skip a leading `---` or `+++` front matter block.
+- `{breaks, true}`: render line breaks inside paragraphs as `<br />`.
+- `{code_class_prefix, P}`: change the class prefix of fenced code blocks.
+- The same options in `erlmark_ex` (keyword options) and `erlmark_gleam` (builder functions).
+
+### Fixed
+
+- A tab after a nested container marker (`> >\t\to`, `- > \tx`) now reaches the tab stop of
+  the original line, as in cmark.
+
 ## [0.1.2]
 
 ### Added

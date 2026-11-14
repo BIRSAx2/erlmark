@@ -33,7 +33,7 @@ Elixir and Gleam have their own packages with native-feeling APIs, built on this
 | Elixir | [`erlmark_ex`](https://hex.pm/packages/erlmark_ex) | `Erlmark.to_html(md, extensions: [:autolink])` |
 | Gleam | [`erlmark_gleam`](https://hex.pm/packages/erlmark_gleam) | `erlmark.to_html_with(md, erlmark.new() \|> erlmark.autolink)` |
 
-Their sources are in the [`elixir/`](elixir) and [`gleam/`](gleam) directories. You can
+Their sources are in the [`elixir/`](https://github.com/BIRSAx2/erlmark/tree/main/elixir) and [`gleam/`](https://github.com/BIRSAx2/erlmark/tree/main/gleam) directories. You can
 also call this package directly: from Elixir as `:erlmark.to_html("# Hi")`, and from Gleam
 with `@external(erlang, "erlmark", "to_html")`.
 
@@ -43,19 +43,76 @@ with `@external(erlang, "erlmark", "to_html")`.
 erlmark:to_html(Markdown :: iodata()) -> binary().
 erlmark:to_html(Markdown :: iodata(), [Option]) -> binary().
 
-%% Option = {spawn_above, Bytes | infinity}
-%%        | {parallel, false | auto | N}
-%%        | {extensions, [autolink | tagfilter]}
+%% Option = {extensions, [autolink | tagfilter | alerts | footnotes]}
+%%        | {safe, boolean()}
+%%        | {breaks, boolean()}
+%%        | {front_matter, boolean()}
+%%        | {heading_ids, true | {prefix, iodata()}} | {heading_anchors, boolean()}
+%%        | {code_class_prefix, iodata()}
+%%        | {spawn_above, Bytes | infinity} | {parallel, false | auto | N}
 ```
 
 | Option | Default | Effect |
 |---|---|---|
+| `{extensions, [...]}` | `[]` | Opt-in GFM extensions, see [Extensions](#extensions). Conversion with extensions is sequential. |
+| `{safe, true}` | `false` | Safe output for untrusted input, see [Safe rendering](#safe-rendering). |
+| `{breaks, true}` | `false` | A line break inside a paragraph renders as `<br />`, as chat and comment systems expect. |
+| `{front_matter, true}` | `false` | Skips a leading `---` or `+++` block, closed by a line holding the same delimiter. An empty or unterminated block is ordinary Markdown. |
+| `{heading_ids, true \| {prefix, P}}` | off | Adds `id` to headings, made from their text the way GitHub does (see [Heading ids](#heading-ids)). A prefix goes on the `id` attribute only. Forces sequential conversion. |
+| `{heading_anchors, true}` | `false` | Also adds a `<a class="anchor">` link to each heading. Implies `heading_ids`. |
+| `{code_class_prefix, P}` | `<<"language-">>` | Prefix of the class on fenced code blocks that have an info string. |
 | `{spawn_above, Bytes}` | `256` | Inputs larger than `Bytes` are converted in a short-lived process with a pre-sized heap, which avoids nearly all garbage collection (15-30% faster). Errors are re-raised in the caller. `infinity` always converts in the caller. |
 | `{parallel, auto \| N}` | `false` | Converts large documents on `N` schedulers (`auto` is all online). See below. |
-| `{extensions, [...]}` | `[]` | `autolink`: bare `www.`, `http(s)://`, `ftp://` URLs and e-mail addresses become links. `tagfilter`: `<script>`, `<style>` and similar tags are escaped. Conversion with extensions is sequential and not tuned. |
 
-Raw HTML in the input is passed through unchanged, as CommonMark requires.
-Sanitise the output if the input is untrusted.
+Raw HTML in the input is passed through unchanged by default, as CommonMark requires.
+Use `{safe, true}` or sanitise the output if the input is untrusted.
+
+### Safe rendering
+
+With `{safe, true}`:
+
+- raw HTML blocks and inline raw HTML are replaced by `<!-- raw HTML omitted -->`;
+- link and image destinations that use `javascript:`, `vbscript:`, `file:` or `data:`
+  become empty. `data:` is kept for PNG, GIF, JPEG and WebP images. Browsers ignore
+  leading control characters and spaces and tabs or line breaks inside a scheme, so those are
+  skipped when the scheme is checked, and the check also sees destinations that came from
+  character references (`&#106;avascript:`).
+
+```erlang
+1> erlmark:to_html(<<"<script>alert(1)</script>\n\n[a](javascript:alert(1))">>, [{safe, true}]).
+<<"<!-- raw HTML omitted -->\n<p><a href=\"\">a</a></p>\n">>
+```
+
+Code spans and code blocks are unaffected, because their content is escaped. Safe mode is
+not a general HTML sanitiser: it removes what Markdown can inject, and it does not
+inspect the output of your own render hooks or post-processing.
+
+### Extensions
+
+Enabled with `{extensions, [...]}`. Each is off by default.
+
+| Extension | Effect |
+|---|---|
+| `autolink` | Bare `www.`, `http(s)://` and `ftp://` URLs and e-mail addresses become links. |
+| `tagfilter` | `<script>`, `<style>` and similar tags are escaped. |
+| `alerts` | Block quotes that start with `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` render as `<div class="markdown-alert markdown-alert-note">` with a title paragraph. Text after the marker on its line is a custom title. |
+| `footnotes` | `[^label]` references and `[^label]: text` definitions. Notes are numbered in the order of first use and listed in a `<section class="footnotes">` at the end, with a back link for each use. Definitions that are never used are dropped, and a body continues on lines indented four spaces. |
+
+```erlang
+1> erlmark:to_html(<<"Text[^1].\n\n[^1]: The note.">>, [{extensions, [footnotes]}]).
+```
+
+### Heading ids
+
+`{heading_ids, true}` gives each heading an id built from its text: lowercase, letters,
+marks, numbers, `_` and `-` kept, other characters dropped, spaces turned into hyphens. A
+heading that repeats gets `-1`, `-2` and so on, skipping ids that are taken. The ids are
+numbered over the whole document, so conversion with heading ids is always sequential.
+
+```erlang
+1> erlmark:to_html(<<"# Hello World\n# Hello World">>, [{heading_ids, true}]).
+<<"<h1 id=\"hello-world\">Hello World</h1>\n<h1 id=\"hello-world-1\">Hello World</h1>\n">>
+```
 
 ### Parallel conversion
 
@@ -94,8 +151,8 @@ Known deviations:
 - Block quotes and list items nest at most 64 levels. Deeper markers become
   paragraph text. Parsing nested lists is cubic in depth without a cap, and real
   documents nest about 6 levels.
-- A line after an empty list item or empty block quote can be taken as a lazy
-  continuation, where CommonMark ends the container (`> -` followed by `text`).
+- An unprefixed line after the rows of a table inside a block quote becomes one more row
+  of the table. cmark-based parsers end the table and the quote there.
 
 ## Performance
 
