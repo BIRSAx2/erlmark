@@ -14,8 +14,31 @@ and needs nothing beyond Erlang/OTP.
 <<"<h1>Hello <em>world</em></h1>\n">>
 ```
 
-From Elixir: `:erlmark.to_html("# Hello *world*")`. From Gleam:
-`@external(erlang, "erlmark", "to_html")`.
+## Installation
+
+Erlang (`rebar.config`):
+
+```erlang
+{deps, [{erlmark, "0.1.0"}]}.
+```
+
+Elixir (`mix.exs`; Mix builds the rebar3 package for you):
+
+```elixir
+{:erlmark, "~> 0.1"}
+```
+
+```elixir
+:erlmark.to_html("# Hello *world*")
+:erlmark.to_html(markdown, parallel: :auto, extensions: [:autolink])
+```
+
+Gleam (`gleam add erlmark`; `rebar3` must be installed):
+
+```gleam
+@external(erlang, "erlmark", "to_html")
+pub fn to_html(markdown: String) -> String
+```
 
 ## API
 
@@ -131,3 +154,8 @@ rebar3 dialyzer
 [WHATWG entity list](https://html.spec.whatwg.org/entities.json).
 
 Not yet published to Hex.
+
+## License
+
+Copyright 2026 Mouhieddine Sabir. Licensed under the Apache License, Version 2.0;
+see [LICENSE](LICENSE).
