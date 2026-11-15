@@ -13,7 +13,7 @@ documents.
 ```elixir
 def deps do
   [
-    {:erlmark_ex, "~> 0.1"}
+    {:erlmark_ex, "~> 0.2"}
   ]
 end
 ```

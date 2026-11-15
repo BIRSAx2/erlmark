@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-15
+
 ### Added
 
 - `{safe, true}`: raw HTML is replaced by `<!-- raw HTML omitted -->` and link and image
@@ -61,7 +63,8 @@ All notable changes to this project are documented here. The format follows
 - Opt-in parallel conversion of large documents via `{parallel, auto | N}`.
 - `{spawn_above, Bytes}` to control conversion in a helper process with a pre-sized heap.
 
-[Unreleased]: https://github.com/BIRSAx2/erlmark/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/BIRSAx2/erlmark/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/BIRSAx2/erlmark/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/BIRSAx2/erlmark/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/BIRSAx2/erlmark/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/BIRSAx2/erlmark/releases/tag/v0.1.0
